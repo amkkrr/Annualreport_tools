@@ -16,6 +16,9 @@ env/
 .vscode/
 .DS_Store
 *.swp
+*.code-workspace
+CLAUDE.md
+docs/*audit*.md
 
 # Logs and checkpoints
 *.log
