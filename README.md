@@ -16,7 +16,14 @@
   <a href="./docs/README.zh.md">简体中文</a>
 </p>
 
-![演示截图](https://cdn.nlark.com/yuque/0/2023/png/22569186/1684739594091-379cdf84-28f5-4998-835f-7c9555fddac7.png#averageHue=%23a8c1db&clientId=uc29edf23-5138-4&from=paste&height=687&id=ua755022a&originHeight=1374&originWidth=2560&originalType=binary&ratio=2&rotation=0&showTitle=false&size=944474&status=done&style=none&taskId=ucc34614d-4b0d-48dc-a316-949d41f13b8&title=&width=1280)
+---
+
+## 📌 仓库说明
+
+> **注意：** 本仓库是 [legeling/Annualreport_tools](https://github.com/legeling/Annualreport_tools) 的一个分支（Fork）。原仓库提供了完整的年报数据采集和分析工具链，本分支在此基础上进行了个性化调整和优化。
+>
+> - **上游仓库（原仓库）：** [https://github.com/legeling/Annualreport_tools](https://github.com/legeling/Annualreport_tools)
+> - **贡献方式：** 欢迎通过 Pull Request 向上游仓库贡献代码和改进建议
 
 ---
 
@@ -49,13 +56,13 @@
 
 ## 模块概览
 
-| 脚本/资源 | 说明 |
-| --- | --- |
-| `1.report_link_crawler.py` | 带板块/行业过滤器和重试逻辑的巨潮资讯爬虫 |
-| `2.pdf_batch_converter.py` | 批量下载 + pdfplumber转换，带文件验证 |
-| `3.text_analysis.py` | 多进程关键词分析，Excel导出 |
-| `text_analysis_universal.py` | 适用于任意TXT文件夹的轻量级分析器 |
-| `./res/AnnualReport_links_2004_2023.xlsx` | 涵盖2004-2023年的精选主表 |
+| 脚本/资源                                 | 说明                                      |
+| ----------------------------------------- | ----------------------------------------- |
+| `1.report_link_crawler.py`                | 带板块/行业过滤器和重试逻辑的巨潮资讯爬虫 |
+| `2.pdf_batch_converter.py`                | 批量下载 + pdfplumber转换，带文件验证     |
+| `3.text_analysis.py`                      | 多进程关键词分析，Excel导出               |
+| `text_analysis_universal.py`              | 适用于任意TXT文件夹的轻量级分析器         |
+| `./res/AnnualReport_links_2004_2023.xlsx` | 涵盖2004-2023年的精选主表                 |
 
 ## 脚本索引（旧版编号）
 
@@ -81,16 +88,16 @@ pip install -r requirements.txt
 
 ## 更新日志
 
-| 日期 | 亮点 |
-| --- | --- |
-| 2025/11/21 | 代码优化：添加类型提示，改进错误处理，增强所有脚本的鲁棒性 |
+| 日期       | 亮点                                                          |
+| ---------- | ------------------------------------------------------------- |
+| 2025/11/21 | 代码优化：添加类型提示，改进错误处理，增强所有脚本的鲁棒性    |
 | 2025/11/21 | README切换为英文默认 + 免责声明，多进程分析器，添加docs文件夹 |
-| 2025/03/15 | 添加requirements文件，下载器现在支持其他公告 |
-| 2024/10/13 | 修复爬虫结果中缺失公司的问题 |
-| 2024/02/14 | 上传主表，改进可读性 |
-| 2024/01/04 | 改进关键词准确性，添加通用分析器 |
-| 2023/05/25 | 全面重构，参数化工作流 |
-| 2023/04/20 | 初始提交 |
+| 2025/03/15 | 添加requirements文件，下载器现在支持其他公告                  |
+| 2024/10/13 | 修复爬虫结果中缺失公司的问题                                  |
+| 2024/02/14 | 上传主表，改进可读性                                          |
+| 2024/01/04 | 改进关键词准确性，添加通用分析器                              |
+| 2023/05/25 | 全面重构，参数化工作流                                        |
+| 2023/04/20 | 初始提交                                                      |
 
 ## TODO
 
@@ -104,18 +111,4 @@ pip install -r requirements.txt
 
 欢迎提交Issues和PRs！与社区分享功能想法、bug报告或最佳实践。
 
-## 支持
 
-如果这个项目对您的研究或工作有帮助，请考虑请我喝杯咖啡！您的支持让项目保持活力并激励进一步改进。
-
-<div align="center">
-  <a href="https://www.buymeacoffee.com/legeling">
-    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-orange?style=for-the-badge&logo=buy-me-a-coffee" alt="Buy Me A Coffee"/>
-  </a>
-</div>
-
-<div align="center">
-  <p><strong>或扫描微信二维码：</strong></p>
-  <img width="280" src="https://raw.githubusercontent.com/legeling/Annualreport_tools/main/imgs/wechat.jpg" alt="微信捐赠二维码"/>
-  <p><em>每一份贡献都值得感激！感谢您的支持！</em></p>
-</div>
