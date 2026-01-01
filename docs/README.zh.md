@@ -75,6 +75,15 @@ pip install -r requirements.txt
 - [README.md](../README.md) — English（完整版本）
 - [docs/README.zh.md](./README.zh.md) — 简体中文版本
 
+## 文档索引
+
+- `docs/pdf_batch_converter_manual.md`：下载+转换模式（download）用户手册
+- `docs/convert_only_mode_spec.md`：纯转换模式规格书
+- `docs/convert_only_mode_user_guide.md`：纯转换模式用户使用指南
+- `docs/convert_only_mode_maintenance.md`：纯转换模式维护文档
+- `docs/convert_only_mode_spec_audit.md`：纯转换模式规格审计记录
+- `2.pdf_batch_converter.py`：命令行入口（无参数输出帮助；`--use-config` 兼容旧用法）
+
 ## Star历史
 
 [![Star History Chart](https://api.star-history.com/svg?repos=legeling/Annualreport_tools&type=Date)](https://star-history.com/#legeling/Annualreport_tools&Date)
