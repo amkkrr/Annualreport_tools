@@ -82,10 +82,6 @@ pip install -r requirements.txt
 - [docs/README.en.md](./docs/README.en.md) — English（完整版本）
 - [docs/README.zh.md](./docs/README.zh.md) — 简体中文版本
 
-## Star历史
-
-[![Star History Chart](https://api.star-history.com/svg?repos=legeling/Annualreport_tools&type=Date)](https://star-history.com/#legeling/Annualreport_tools&Date)
-
 ## 更新日志
 
 | 日期       | 亮点                                                          |
