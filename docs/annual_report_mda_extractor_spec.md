@@ -10,7 +10,7 @@
 ### 目标
 
 - 从年报**已抽取文本**中提取「管理层讨论与分析」（MD&A）章节全文
-- 输出结构化文本，存入 `annual_reports.duckdb`
+- 输出结构化文本，存入 `data/annual_reports.duckdb`
 
 ### 约束
 
@@ -23,14 +23,14 @@
 ## 2. 依赖库
 
 ```bash
-pip install rich duckdb
+pip install rich duckdb python-dotenv
 ```
 
 | 库             | 用途                                  |
 | -------------- | ------------------------------------- |
-| **pdfplumber** | PDF 文本提取（比 pypdf 表格处理更好） |
 | **rich**       | 进度条与日志                          |
 | **duckdb**     | 结果存储                              |
+| **python-dotenv** | 从 `.env` 加载 LLM 密钥/配置（可选但推荐） |
 
 ---
 
@@ -88,6 +88,9 @@ NEXT_TITLES = [
 ### 3.2 提取算法（迭代增强版）
 
 ```python
+MAX_PAGES_DEFAULT = 15
+MAX_CHARS_DEFAULT = 120_000
+
 def calculate_mda_score(text: str) -> float:
     """
     CPU 质检核心：计算文本像 MD&A 的程度 (0.0 - 1.0)
@@ -116,10 +119,16 @@ def extract_mda_iterative(pages_text: Sequence[str]):
     candidates = []
 
     # --- Strategy 1: TOC Parsing (伪代码示意) ---
-    # 扫描前 15 页，寻找 "管理层...15" 结构的行，解析出 start_page 和 end_page
+    # 扫描前 15 页，寻找 "管理层...15" 结构的行；若解析到目录页码，需先映射到 page_index_start/page_index_end
     toc_hit = parse_toc_for_page_range(pages_text[:15]) 
     if toc_hit:
-        text = extract_by_pages(pages_text, toc_hit.start, toc_hit.end)
+        text = extract_by_pages(
+            pages_text,
+            toc_hit.page_index_start,
+            toc_hit.page_index_end,
+            max_pages=MAX_PAGES_DEFAULT,
+            max_chars=MAX_CHARS_DEFAULT,
+        )
         candidates.append({"src": "toc", "text": text, "score": calculate_mda_score(text)})
 
     # --- Strategy 2: Body Scan (标准模式) ---
@@ -144,8 +153,17 @@ def extract_mda_iterative(pages_text: Sequence[str]):
   - 出现“……/....”引导线 + 多个页码
   - 同页出现大量“第X节/第X章/……”
 - **页眉/页脚重复标题**可能导致 start 提前或 end 过早触发；可作为后续增强：
-  - 基于 `extract_words()` 的位置约束（标题更靠上且字号更大）
-  - 或对跨页重复行做简单去重（先收集每页首行/末行的高频文本）
+  - 基于“跨页重复行”去重：统计每页首/末 1-2 行的高频文本，抽取时对这些行做过滤（不依赖 PDF 版面信息）
+  - 对“像标题”的命中加约束：独立一行/前缀序号（如“第X节”）/长度上限/非目录引导线
+
+### 3.4 规则优先级与冲突裁决（确定性约束）
+
+为保证同一份报告在不同运行中产出一致结果，需在实现中写死以下优先级与兜底：
+
+1. **起始边界优先级**：`extraction_rules`（匹配到且通过目录/正文判定） > TOC 命中 > 正文标题命中 > 放宽正则。
+2. **结束边界优先级**：TOC 的“下一章标题” > `NEXT_TITLES`（需“像标题”）> 备用结束符（如“第X节/第X章”）> 截断。
+3. **标题命中需满足“像标题”**（避免目录与页眉误触发）：尽量要求独立一行、长度上限、可带序号前缀、非引导线（`……`/`...`）密集行。
+4. **截断规则**：当 end 未找到或超过阈值时，以 `max_pages/max_chars` 截断，并写入 `is_truncated=true` 与 `truncation_reason`；截断后仍需执行质检评分，失败则标记质量 Flag（不静默当成功）。
 
 ---
 
@@ -153,15 +171,36 @@ def extract_mda_iterative(pages_text: Sequence[str]):
 
 ### 4.1 输入
 
+本工具只消费上游产出的**单文件文本**（`*.txt`），不直接解析 PDF。
+
 ```
-data/annual_reports/
+data/annual_reports_text/
 ├── 000778/
-│   ├── 2022.pdf
-│   ├── 2023.pdf
-│   └── 2024.pdf
+│   ├── 2022.txt
+│   ├── 2023.txt
+│   └── 2024.txt
 └── 600519/
     └── ...
 ```
+
+#### `*.txt` 格式约定（最低可实现契约）
+
+上游输出为单个文本文件，但必须携带“页边界”信息，便于 TOC 优先策略按页切片与落库页范围字段。
+
+推荐的页分隔符（按优先级）：
+
+1. **ASCII Form Feed**：`\f`（大多数 PDF→Text 工具会在换页处插入）
+2. 明确分隔行：如 `===== Page 12 =====` / `--- Page 12 ---`（需全量一致）
+
+实现上，工具应按上述规则将 `*.txt` 解析为 `pages_text: list[str]`，并以 `page_index`（0-based）作为唯一可信页序。
+若无法识别页分隔符，则将全文视为单页（`page_index=0`），并强制关闭 TOC→页范围切片（仅保留正文扫描与长度阈值兜底），同时写入质量 Flag（例如 `FLAG_PAGE_BOUNDARY_MISSING`）。
+
+页码语义约定：
+
+- `page_index`：由 `*.txt` 切分出的页序下标（从 0 开始），用于所有切片与落库的**唯一可信页序**。
+- `source_sha256`：建议对输入 `*.txt` 文件内容计算，作为幂等键与增量判定基础。
+- `printed_page_number`：目录解析出的“印刷页码/书页页码”，年报常与 PDF 物理页不一致；由于输入为纯文本，通常只能通过目录行解析得到（可为空）。
+- TOC 策略若解析到印刷页码：必须先做“印刷页码 → page_index”的映射；映射失败则降级为正文扫描（不得盲切片）。
 
 ### 4.2 输出（DuckDB 表）
 
@@ -173,29 +212,41 @@ CREATE TABLE mda_text (
     mda_raw TEXT,
     char_count INTEGER,
 
-    start_page INTEGER,
-    end_page INTEGER,
+    -- 页范围语义：均为 pages[].page_index（0-based），end 为“开区间”（含 start，不含 end）
+    page_index_start INTEGER,
+    page_index_end INTEGER,
     page_count INTEGER,
+    -- 可选：目录解析出的印刷页码（若可靠）
+    printed_page_start INTEGER,
+    printed_page_end INTEGER,
 
     hit_start VARCHAR,          -- 命中的标题/正则（含 hit_kind）
     hit_end VARCHAR,
     is_truncated BOOLEAN,       -- 是否触发 max_pages 截断
+    truncation_reason VARCHAR,  -- 'max_pages' | 'max_chars' | 'end_not_found' | NULL
 
-    pdf_path VARCHAR,
-    pdf_sha256 VARCHAR,         -- 用于增量/复跑校验（可选）
+    -- 质量标注：数组形态，允许多个 Flag
+    quality_flags JSON,         -- e.g. ["FLAG_LENGTH_ABNORMAL","FLAG_TAIL_OVERLAP"]
+    quality_detail JSON,
+
+    source_path VARCHAR,
+    source_sha256 VARCHAR,      -- 用于增量/复跑校验
+    extractor_version VARCHAR,
     extracted_at TIMESTAMP,
     used_rule_type VARCHAR,    -- 'generic' 或 'custom'
-    PRIMARY KEY (stock_code, year)
+    PRIMARY KEY (stock_code, year, source_sha256)
 );
 
 -- 存储自适应规则（学习到的知识）
 CREATE TABLE extraction_rules (
     stock_code VARCHAR,
+    year INTEGER,
+    report_signature VARCHAR,   -- 可选：目录章节序列/标题序列哈希，用于版式变体区分
     start_pattern VARCHAR,     -- 学习到的起始标题，如 "第三节 董事会报告"
     end_pattern VARCHAR,       -- 学习到的结束标题
     rule_source VARCHAR,       -- 'llm_learned' 或 'manual'
     updated_at TIMESTAMP,
-    PRIMARY KEY (stock_code)
+    PRIMARY KEY (stock_code, year)
 );
 ```
 
@@ -205,25 +256,48 @@ CREATE TABLE extraction_rules (
 
 ```bash
 # 单文件测试（输入为“已抽取文本”，需包含页边界信息）
-python mda_extractor.py --pages data/annual_reports_text/000778/2023.pages.json
+python mda_extractor.py --text data/annual_reports_text/000778/2023.txt
 
 # 批量提取（指定目录：目录下存放已抽取文本）
 python mda_extractor.py --dir data/annual_reports_text/ --workers 4
 
-# 开启自适应学习模式（需要配置 LLM API）
-python mda_extractor.py --dir data/annual_reports_text/ --learn --api-key "sk-..."
+# 开启自适应学习模式（需要配置 LLM API；密钥放在 .env 或环境变量中，避免命令行明文）
+python mda_extractor.py --dir data/annual_reports_text/ --learn
 ```
 
 ### 参数说明
 
 | 参数            | 说明                                                |
 | --------------- | --------------------------------------------------- |
-| `--pages`       | 单文件模式：逐页文本（示例为 JSON，格式约定见实现） |
-| `--dir`         | 批量模式：扫描目录下所有已抽取文本文件              |
+| `--text`        | 单文件模式：上游抽取的单个 `*.txt`（需可切分出页边界，约定见 4.1） |
+| `--dir`         | 批量模式：扫描目录下所有 `*.txt`                    |
 | `--workers`     | 并发数，默认 4                                      |
-| `--incremental` | 增量模式，跳过已存在的记录                          |
+| `--incremental` | 增量模式：仅当同一份输入（`source_sha256`）已成功入库时跳过 |
 | `--dry-run`     | 仅统计，不写入数据库                                |
 | `--db`          | 数据库路径，默认 `data/annual_reports.duckdb`       |
+
+### LLM 配置（可选，推荐使用 `.env`）
+
+- 不使用 `--api-key` 等命令行明文参数，避免 shell history / 进程列表泄露密钥。
+- 推荐在项目根目录放置 `.env`（权限建议 600），由 `python-dotenv` 读取。
+
+示例：
+
+```bash
+cat > .env <<'EOF'
+LLM_PROVIDER=deepseek
+LLM_API_KEY=sk-...
+LLM_MODEL=deepseek-chat
+LLM_TIMEOUT_SEC=30
+LLM_MAX_RETRIES=2
+EOF
+```
+
+### 增量与幂等（`--incremental` 口径）
+
+- 同一份输入以 `(stock_code, year, source_sha256)` 作为幂等键；重复运行应对该键做 upsert（结果一致、无重复行）。
+- `--incremental`：当且仅当该幂等键已存在且“上一轮成功”（例如 `mda_raw` 非空且 `char_count >= 500`）时跳过；若存在但失败/为空则允许重跑覆盖。
+- 若同一 `stock_code+year` 出现不同 `source_sha256`（更正版/不同来源）：应插入为新版本，不覆盖旧版本，便于审计与回溯。
 
 ---
 
@@ -242,9 +316,13 @@ python mda_extractor.py --dir data/annual_reports_text/ --learn --api-key "sk-..
 CREATE TABLE extraction_errors (
     stock_code VARCHAR,
     year INTEGER,
-    pdf_path VARCHAR,
+    source_path VARCHAR,
+    source_sha256 VARCHAR,
     error_type VARCHAR,
     error_message TEXT,
+    provider VARCHAR,
+    http_status INTEGER,
+    trace_id VARCHAR,
     created_at TIMESTAMP
 );
 ```
@@ -259,6 +337,7 @@ CREATE TABLE extraction_errors (
 
 | 层级            | 方法       | 逻辑描述                                         | 动作                         |
 | :-------------- | :--------- | :----------------------------------------------- | :--------------------------- |
+| **L1 物理校验** | 格式检测   | 无法识别页分隔符，导致 `pages_text` 只能视为单页 | 标记 `FLAG_PAGE_BOUNDARY_MISSING` |
 | **L1 物理校验** | 长度检测   | `len(text) < 1000` 或 `len(text) > 50000`        | 标记 `FLAG_LENGTH_ABNORMAL`  |
 | **L2 内容校验** | 关键词锚点 | 文本中不含 `['收入', '利润', '同比']` 中任意两个 | 标记 `FLAG_CONTENT_MISMATCH` |
 | **L2 内容校验** | 越界检测   | 文本末尾 500 字出现 `['监事会', '审计报告']`     | 标记 `FLAG_TAIL_OVERLAP`     |
@@ -267,22 +346,33 @@ CREATE TABLE extraction_errors (
 ### 7.2 质检 SQL 脚本
 
 ```sql
+-- 以“同公司同年最新一条”为准（避免多版本 source_sha256 干扰统计）
+CREATE OR REPLACE VIEW mda_text_latest AS
+SELECT *
+FROM (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (PARTITION BY stock_code, year ORDER BY extracted_at DESC) AS rn
+    FROM mda_text
+) t
+WHERE rn = 1;
+
 -- 检查成功率 (L1 & L2)
 SELECT 
     COUNT(*) AS total,
-    SUM(CASE WHEN quality_flag IS NULL THEN 1 ELSE 0 END) AS perfect_clean,
-    ROUND(SUM(CASE WHEN quality_flag IS NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS clean_rate
-FROM mda_text;
+    SUM(CASE WHEN quality_flags IS NULL THEN 1 ELSE 0 END) AS perfect_clean,
+    ROUND(SUM(CASE WHEN quality_flags IS NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS clean_rate
+FROM mda_text_latest;
 
 -- 检查异常短文本 (L1)
 SELECT stock_code, year, char_count
-FROM mda_text
+FROM mda_text_latest
 WHERE char_count < 2000
 ORDER BY char_count;
 
 -- 检查缺失年份
-SELECT stock_code, COUNT(*) AS years
-FROM mda_text
+SELECT stock_code, COUNT(DISTINCT year) AS years
+FROM mda_text_latest
 GROUP BY stock_code
 HAVING years < 2;
 ```
@@ -333,7 +423,8 @@ HAVING years < 2;
 1.  **基于 TOC 的跳跃 (Map & Jump)**:
     *   优先扫描前 20 页寻找目录。
     *   正则匹配 `(管理层讨论|董事会报告).{2,50}(\d+)$`。
-    *   若成功提取页码 $P_{start}$ 和下一章页码 $P_{end}$，直接切片 `pages[P_{start}:P_{end}]`。
+    *   若成功提取到“印刷页码” $P_{start}/P_{end}$：先映射到 `page_index_start/page_index_end`（基于 `printed_page_number` 或可用的映射表）；映射失败则降级为正文扫描。
+    *   若映射成功：切片 `pages[page_index_start:page_index_end]`。
     *   *优势*：完全避开正文标题的异体字干扰。
 
 2.  **锚点评分竞价 (Anchor Scoring)**:
@@ -344,13 +435,13 @@ HAVING years < 2;
 
 3.  **动态边界回退 (Boundary Fallback)**:
     *   若找不到标准的“结束标题”（如“重要事项”），则启用**备用结束符**（如“五、”、“第五节”）。
-    *   若仍失败，则基于长度截断（Start + 15 pages），并标记 `warning: fuzzy_end`。
+    *   若仍失败，则基于阈值截断（`max_pages/max_chars`），并落库 `is_truncated=true` 与 `truncation_reason='end_not_found'`。
 ### 10.2 层级 2：LLM 辅助规则生成 (Adaptive Learning)
 
 仅当 CPU 策略全部失败（Result is None 或 Score < 0.3）时，触发“慢思考”机制。
 1.  **Fast Path (CPU)**: 尝试使用通用正则或已缓存的 `extraction_rules` 进行提取。
 2. **Evaluation**: 检查提取结果（是否为空？字符数是否 < 500？）。
-3. **Slow Path (LLM)**: 若提取失败，仅提取 PDF 前 20 页（含目录）的纯文本。
+3. **Slow Path (LLM)**: 若提取失败，仅提取解析后的前 20 页（含目录）的纯文本片段（来自输入 `*.txt` 的页切分结果）。
 4. **Learning**: 调用 LLM (如 DeepSeek/Qwen/GPT-4o-mini) 分析目录结构。
 5. **Caching**: 将 LLM 识别出的 `start_pattern` 和 `end_pattern` 存入 DuckDB。
 6. **Retry**: 使用新规则重新运行 CPU 提取。
@@ -377,7 +468,13 @@ PROMPT_TEMPLATE = """
 """
 ```
 
-### 10.4 成本控制
+### 10.4 LLM 安全、合规与失败降级（最低要求）
+
+- **密钥管理**：仅支持环境变量/`.env`/交互式输入读取；禁止将密钥写入日志与命令行参数。
+- **调用参数**：至少支持 `timeout`、`max_retries`、并发上限与失败熔断；LLM 失败不得阻塞主流程（返回“需人工复核/CPU 兜底结果”）。
+- **记录最小化**：`extraction_rules` 仅存 `start_pattern/end_pattern` 等规则；不得落库保存发送给 LLM 的原始全文片段；错误表仅记录 provider/状态码/trace_id 等诊断信息。
+
+### 10.5 成本控制
 
 - **只传目录**：不传整个 PDF，只传前 20 页 or TOC 页面，Token 消耗极低。
-- **一次学习，永久使用**：规则按 `stock_code` 缓存。只要该公司不换排版风格，后续年份无需再次调用 LLM。
+- **学习缓存可控**：规则至少按 `stock_code+year` 缓存；若启用 `report_signature`，可进一步区分“同公司不同版式”，避免跨年误用规则。
