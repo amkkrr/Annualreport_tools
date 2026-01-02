@@ -20,6 +20,7 @@ env/
 CLAUDE.md
 docs/*audit*.md
 docs/*spec*.md
+docs/audits/
 
 # Logs and checkpoints
 *.log
