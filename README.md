@@ -82,6 +82,15 @@ pip install -r requirements.txt
 - [docs/README.en.md](./docs/README.en.md) — English（完整版本）
 - [docs/README.zh.md](./docs/README.zh.md) — 简体中文版本
 
+## 📚 技术文档
+
+为了方便开发者更好地理解和参与本项目，我们提供了详细的架构与设计文档：
+
+- **[系统架构图 (System Architecture)](./docs/system_architecture.md)**：数据流向与模块交互图解。
+- **[功能清单 (Feature List)](./docs/feature_list.md)**：详细的功能点梳理。
+- **[依赖关系图 (Dependency Graph)](./docs/dependency_graph.md)**：外部库与服务依赖分析。
+- **[技术债与优化清单 (Technical Debt)](./docs/technical_debt.md)**：已知问题与未来改进计划。
+
 ## 更新日志
 
 | 日期       | 亮点                                                          |
