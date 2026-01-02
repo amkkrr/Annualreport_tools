@@ -1,0 +1,237 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Optional, Sequence
+
+from .utils import utc_now
+
+
+SUCCESS_CHAR_COUNT_MIN = 500
+
+
+def compute_file_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True)
+class MDAUpsertRecord:
+    stock_code: str
+    year: int
+
+    mda_raw: Optional[str]
+    char_count: Optional[int]
+
+    page_index_start: Optional[int]
+    page_index_end: Optional[int]
+    page_count: Optional[int]
+
+    printed_page_start: Optional[int] = None
+    printed_page_end: Optional[int] = None
+
+    hit_start: Optional[str] = None
+    hit_end: Optional[str] = None
+
+    is_truncated: Optional[bool] = None
+    truncation_reason: Optional[str] = None
+
+    quality_flags: Optional[Sequence[str]] = None
+    quality_detail: Optional[dict[str, Any]] = None
+
+    source_path: str = ""
+    source_sha256: str = ""
+
+    extractor_version: str = ""
+    used_rule_type: Optional[str] = None
+    extracted_at: datetime = field(default_factory=utc_now)
+
+
+def is_successful_record(mda_raw: Optional[str], char_count: Optional[int]) -> bool:
+    if mda_raw is None:
+        return False
+    if char_count is None:
+        return len(mda_raw) >= SUCCESS_CHAR_COUNT_MIN
+    return char_count >= SUCCESS_CHAR_COUNT_MIN
+
+
+def should_skip_incremental(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    stock_code: str,
+    year: int,
+    source_sha256: str,
+    min_char_count: int = SUCCESS_CHAR_COUNT_MIN,
+) -> bool:
+    row = conn.execute(
+        """
+        SELECT mda_raw, char_count
+        FROM mda_text
+        WHERE stock_code = ? AND year = ? AND source_sha256 = ?
+        LIMIT 1;
+        """,
+        (stock_code, year, source_sha256),
+    ).fetchone()
+
+    if not row:
+        return False
+
+    mda_raw, char_count = row
+    if mda_raw is None:
+        return False
+    if char_count is None:
+        return len(mda_raw) >= min_char_count
+    return int(char_count) >= min_char_count
+
+
+def upsert_mda_text(conn: "duckdb.DuckDBPyConnection", record: MDAUpsertRecord) -> None:
+    quality_flags_json = json.dumps(list(record.quality_flags), ensure_ascii=False) if record.quality_flags is not None else None
+    quality_detail_json = json.dumps(record.quality_detail, ensure_ascii=False) if record.quality_detail is not None else None
+
+    conn.execute(
+        """
+        INSERT INTO mda_text (
+            stock_code,
+            year,
+            mda_raw,
+            char_count,
+            page_index_start,
+            page_index_end,
+            page_count,
+            printed_page_start,
+            printed_page_end,
+            hit_start,
+            hit_end,
+            is_truncated,
+            truncation_reason,
+            quality_flags,
+            quality_detail,
+            source_path,
+            source_sha256,
+            extractor_version,
+            extracted_at,
+            used_rule_type
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (stock_code, year, source_sha256) DO UPDATE SET
+            mda_raw = excluded.mda_raw,
+            char_count = excluded.char_count,
+            page_index_start = excluded.page_index_start,
+            page_index_end = excluded.page_index_end,
+            page_count = excluded.page_count,
+            printed_page_start = excluded.printed_page_start,
+            printed_page_end = excluded.printed_page_end,
+            hit_start = excluded.hit_start,
+            hit_end = excluded.hit_end,
+            is_truncated = excluded.is_truncated,
+            truncation_reason = excluded.truncation_reason,
+            quality_flags = excluded.quality_flags,
+            quality_detail = excluded.quality_detail,
+            source_path = excluded.source_path,
+            extractor_version = excluded.extractor_version,
+            extracted_at = excluded.extracted_at,
+            used_rule_type = excluded.used_rule_type;
+        """,
+        (
+            record.stock_code,
+            record.year,
+            record.mda_raw,
+            record.char_count,
+            record.page_index_start,
+            record.page_index_end,
+            record.page_count,
+            record.printed_page_start,
+            record.printed_page_end,
+            record.hit_start,
+            record.hit_end,
+            record.is_truncated,
+            record.truncation_reason,
+            quality_flags_json,
+            quality_detail_json,
+            record.source_path,
+            record.source_sha256,
+            record.extractor_version,
+            record.extracted_at,
+            record.used_rule_type,
+        ),
+    )
+
+
+def get_extraction_rule(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    stock_code: str,
+    year: int,
+) -> Optional[dict[str, Any]]:
+    row = conn.execute(
+        """
+        SELECT report_signature, start_pattern, end_pattern, rule_source, updated_at
+        FROM extraction_rules
+        WHERE stock_code = ? AND year = ?
+        LIMIT 1;
+        """,
+        (stock_code, year),
+    ).fetchone()
+
+    if not row:
+        return None
+
+    report_signature, start_pattern, end_pattern, rule_source, updated_at = row
+    return {
+        "report_signature": report_signature,
+        "start_pattern": start_pattern,
+        "end_pattern": end_pattern,
+        "rule_source": rule_source,
+        "updated_at": updated_at,
+    }
+
+
+def upsert_extraction_rule(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    stock_code: str,
+    year: int,
+    start_pattern: str,
+    end_pattern: str,
+    rule_source: str,
+    report_signature: Optional[str] = None,
+    updated_at: Optional[datetime] = None,
+) -> None:
+    if updated_at is None:
+        updated_at = __import__("annual_report_mda.utils", fromlist=["utc_now"]).utc_now()
+
+    conn.execute(
+        """
+        INSERT INTO extraction_rules (
+            stock_code,
+            year,
+            report_signature,
+            start_pattern,
+            end_pattern,
+            rule_source,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (stock_code, year) DO UPDATE SET
+            report_signature = excluded.report_signature,
+            start_pattern = excluded.start_pattern,
+            end_pattern = excluded.end_pattern,
+            rule_source = excluded.rule_source,
+            updated_at = excluded.updated_at;
+        """,
+        (
+            stock_code,
+            year,
+            report_signature,
+            start_pattern,
+            end_pattern,
+            rule_source,
+            updated_at,
+        ),
+    )
