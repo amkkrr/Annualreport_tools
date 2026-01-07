@@ -18,6 +18,7 @@ env/
 *.swp
 *.code-workspace
 CLAUDE.md
+.kilocode/
 docs/*audit*.md
 docs/*spec*.md
 docs/audits/
@@ -38,6 +39,7 @@ docs/audits/
 *.xlsx
 *.xlsm
 output/
+outputs/
 data/
 
 # Notebooks checkpoints

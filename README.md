@@ -106,10 +106,13 @@ pip install -r requirements.txt
 
 ## TODO
 
-- [ ] GUI / 桌面前端
-- [ ] 将数据持久化到PostgreSQL / DuckDB进行进一步分析
-- [ ] 云端关键词分析 & API端点
-- [ ] 自动化调度 + 告警（GitHub Actions / cron）
+> 详细开发计划与验收标准请参阅 [TODO.md](./TODO.md)
+
+- [ ] **M1 配置统一 + DuckDB 底座** — 统一配置管理，DuckDB 替代 Excel 作为数据枢纽
+- [ ] **M2 结构化提取 + 质量评估** — 提升 MD&A 提取准确率，建立质量评分闭环
+- [ ] **M3 NLP 深度分析** — 情感分析、相似度分析、LDA 主题模型
+- [ ] **M4 工程化基础设施** — CI/CD 流水线、日志系统、测试覆盖
+- [ ] **M5 长期规划** — 云端存储、API 服务化
 - [x] 双语文档 & 项目指标
 
 ## 贡献
