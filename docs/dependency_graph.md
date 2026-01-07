@@ -44,6 +44,11 @@ graph LR
         dotenv[python-dotenv]
     end
 
+    subgraph Config [配置管理]
+        pydantic[pydantic]
+        pyyaml[PyYAML]
+    end
+
     %% 爬虫依赖
     Crawler --> requests
     Crawler --> openpyxl
@@ -62,6 +67,12 @@ graph LR
     MDAExtractor --> duckdb
     MDAExtractor --> rich
     MDAExtractor --> dotenv
+
+    %% 配置管理依赖 (所有脚本共用)
+    Crawler --> Config
+    Converter --> Config
+    Analyzer --> Config
+    MDAExtractor --> Config
 ```
 
 ## 核心依赖说明
@@ -79,3 +90,5 @@ graph LR
 | **duckdb**       | `>=0.9.0`    | 用于 MD&A 提取器存储提取结果。                            |
 | **rich**         | `>=13.0.0`   | 用于 MD&A 提取器的进度条与日志美化。                      |
 | **python-dotenv**| `>=1.0.0`    | 用于 MD&A 提取器从 `.env` 加载配置。                      |
+| **PyYAML**       | `>=6.0`      | 用于统一配置管理，解析 YAML 配置文件。                    |
+| **pydantic**     | `>=2.0,<3.0` | 用于配置验证与类型安全，支持配置文件的 schema 校验。      |

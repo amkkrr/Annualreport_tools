@@ -11,8 +11,11 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
+import os
 import re
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -365,39 +368,133 @@ class AnnualReportCrawler:
         logging.info("="*60)
 
 
-if __name__ == '__main__':
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """构建命令行参数解析器。"""
+    parser = argparse.ArgumentParser(
+        prog="1.report_link_crawler.py",
+        description="巨潮资讯年报链接爬虫，按天分片爬取，支持板块/行业过滤。",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "--use-config",
+        action="store_true",
+        help="使用 config.yaml 配置文件运行（推荐）。",
+    )
+    parser.add_argument(
+        "--config", "-c",
+        default="config.yaml",
+        help="指定配置文件路径（默认 config.yaml）。",
+    )
+    parser.add_argument(
+        "--year", "-y",
+        type=int,
+        nargs="+",
+        help="目标年份（覆盖配置文件），支持多年份如 --year 2022 2023。",
+    )
+    parser.add_argument(
+        "--log-level",
+        default=None,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="日志级别（覆盖配置文件）。",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        help="请求超时秒数（覆盖配置文件）。",
+    )
+    return parser
+
+
+def _run_with_config(args: argparse.Namespace) -> None:
+    """使用配置文件运行爬虫。"""
+    try:
+        from annual_report_mda.config_manager import (
+            load_config,
+            apply_cli_overrides,
+            log_config_summary,
+        )
+    except ImportError as e:
+        logging.error(f"无法导入配置管理模块: {e}")
+        logging.error("请确保已安装依赖: pip install -r requirements.txt")
+        raise SystemExit(1)
+
+    try:
+        config = load_config(args.config)
+    except FileNotFoundError as e:
+        logging.error(str(e))
+        raise SystemExit(1)
+    except ValueError as e:
+        logging.error(str(e))
+        raise SystemExit(1)
+
+    overrides = {}
+    if args.year:
+        overrides["target_years"] = args.year
+    if args.log_level:
+        overrides["log_level"] = args.log_level
+    if args.timeout:
+        overrides["timeout"] = args.timeout
+
+    if overrides:
+        config = apply_cli_overrides(config, overrides)
+
+    if config.project.log_level:
+        logging.getLogger().setLevel(getattr(logging, config.project.log_level))
+
+    log_config_summary(config, logging.getLogger())
+
+    crawler_cfg = config.crawler
+    for year in crawler_cfg.target_years:
+        plates_str = ";".join(crawler_cfg.filters.plates)
+        legacy_config = CrawlerConfig(
+            target_year=year,
+            exclude_keywords=crawler_cfg.filters.exclude_keywords,
+            trade=crawler_cfg.filters.trade,
+            plate=plates_str,
+            max_retries=crawler_cfg.request.max_retries,
+            retry_delay=crawler_cfg.request.retry_delay,
+            timeout=crawler_cfg.request.timeout,
+            output_dir=str(Path(crawler_cfg.output.excel_path_template).parent),
+            save_interval=crawler_cfg.output.save_interval,
+            strict_year_check=True,
+        )
+
+        crawler = AnnualReportCrawler(legacy_config)
+        crawler.run()
+        logging.info(f"{year}年处理完成")
+
+
+def _run_with_embedded_config() -> None:
+    """使用脚本底部嵌入配置运行（旧版兼容）。"""
     # ==================== 配置区域 ====================
-    
+
     # 目标年份
     TARGET_YEAR = 2024
     # 排除关键词列表（可加入'更正后'、'修订版'等）
     EXCLUDE_KEYWORDS = ['英文', '已取消', '摘要']
-    
+
     # 行业过滤（为空则不过滤）
-    # 参考内容："农、林、牧、渔业;电力、热力、燃气及水生产和供应业;建筑业;采矿业;制造业;批发和零售业;交通运输、仓储和邮政业;住宿和餐饮业;信息传输、软件和信息技术服务业;金融业;房地产业;租赁和商务服务业;科学研究和技术服务业;水利、环境和公共设施管理业;居民服务、修理和其他服务业;教育;卫生和社会工作;文化、体育和娱乐业;综合"
     TRADE = ""
-    
+
     # 板块控制：深市sz 沪市sh 深主板szmb 沪主板shmb 创业板szcy 科创板shkcp 北交所bj
     PLATE = "sz;sh"
-    
+
     # 爬虫配置
-    MAX_RETRIES = 3  # 最大重试次数
-    RETRY_DELAY = 5  # 重试延迟（秒）
-    TIMEOUT = 10  # 请求超时（秒）
-    OUTPUT_DIR = "."  # 输出目录
-    SAVE_INTERVAL = 100  # 增量保存间隔（每爬取N条就保存一次）
-    STRICT_YEAR_CHECK = True  # 严格检查年份（只保留标题中年份与目标年份一致的记录）
-    
+    MAX_RETRIES = 3
+    RETRY_DELAY = 5
+    TIMEOUT = 10
+    OUTPUT_DIR = "."
+    SAVE_INTERVAL = 100
+    STRICT_YEAR_CHECK = True
+
     # 是否批量处理多个年份
     BATCH_MODE = False
-    # 批量模式：年份范围
     START_YEAR = 2020
     END_YEAR = 2023
-    
+
     # ==================== 执行逻辑 ====================
-    
+
     if BATCH_MODE:
-        # 批量处理多个年份
         for year in range(START_YEAR, END_YEAR + 1):
             config = CrawlerConfig(
                 target_year=year,
@@ -411,13 +508,12 @@ if __name__ == '__main__':
                 save_interval=SAVE_INTERVAL,
                 strict_year_check=STRICT_YEAR_CHECK
             )
-            
+
             crawler = AnnualReportCrawler(config)
             crawler.run()
-            
+
             print(f"\n{year}年处理完成\n")
     else:
-        # 处理单个年份
         config = CrawlerConfig(
             target_year=TARGET_YEAR,
             exclude_keywords=EXCLUDE_KEYWORDS,
@@ -430,8 +526,30 @@ if __name__ == '__main__':
             save_interval=SAVE_INTERVAL,
             strict_year_check=STRICT_YEAR_CHECK
         )
-        
+
         crawler = AnnualReportCrawler(config)
         crawler.run()
-        
+
         print(f"\n{TARGET_YEAR}年处理完成\n")
+
+
+def main(argv: list[str]) -> None:
+    """主入口函数。"""
+    parser = _build_arg_parser()
+
+    if len(argv) == 1:
+        print("提示: 无参数运行将使用脚本内置配置。使用 --use-config 启用配置文件模式。")
+        print("      使用 --help 查看更多选项。\n")
+        _run_with_embedded_config()
+        return
+
+    args = parser.parse_args(argv[1:])
+
+    if args.use_config:
+        _run_with_config(args)
+    else:
+        _run_with_embedded_config()
+
+
+if __name__ == '__main__':
+    main(sys.argv)

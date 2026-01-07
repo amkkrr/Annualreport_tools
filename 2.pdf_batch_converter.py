@@ -702,6 +702,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "  # 查看帮助\n"
             "  python3 2.pdf_batch_converter.py\n"
             "\n"
+            "  # 使用 config.yaml 配置文件运行（推荐）\n"
+            "  python3 2.pdf_batch_converter.py --use-yaml-config\n"
+            "\n"
             "  # 纯转换：将 ./annual_reports/pdf 下的PDF转为TXT，输出到 ./outputs/annual_reports/txt\n"
             "  python3 2.pdf_batch_converter.py convert-only --pdf-dir annual_reports/pdf\n"
             "\n"
@@ -725,7 +728,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--use-config",
         action="store_true",
-        help="使用脚本底部“配置区域”的参数运行（兼容旧用法）。",
+        help='使用脚本底部"配置区域"的参数运行（兼容旧用法）。',
+    )
+    parser.add_argument(
+        "--use-yaml-config",
+        action="store_true",
+        help="使用 config.yaml 配置文件运行（推荐）。",
+    )
+    parser.add_argument(
+        "--config", "-c",
+        default="config.yaml",
+        help="指定 YAML 配置文件路径（默认 config.yaml，需配合 --use-yaml-config）。",
     )
     parser.add_argument(
         "--log-level",
@@ -820,6 +833,60 @@ def _run_convert_only_from_args(args: argparse.Namespace) -> None:
         )
     )
     processor.run()
+
+
+def _run_with_yaml_config(args: argparse.Namespace) -> None:
+    """使用 YAML 配置文件运行下载器。"""
+    try:
+        from annual_report_mda.config_manager import (
+            load_config,
+            apply_cli_overrides,
+            log_config_summary,
+        )
+    except ImportError as e:
+        logging.error(f"无法导入配置管理模块: {e}")
+        logging.error("请确保已安装依赖: pip install -r requirements.txt")
+        raise SystemExit(1)
+
+    try:
+        config = load_config(args.config)
+    except FileNotFoundError as e:
+        logging.error(str(e))
+        raise SystemExit(1)
+    except ValueError as e:
+        logging.error(str(e))
+        raise SystemExit(1)
+
+    if config.project.log_level:
+        logging.getLogger().setLevel(getattr(logging, config.project.log_level))
+
+    log_config_summary(config, logging.getLogger())
+
+    downloader_cfg = config.downloader
+    crawler_cfg = config.crawler
+
+    for year in crawler_cfg.target_years:
+        excel_path = downloader_cfg.paths.input_excel_template.replace("{year}", str(year))
+        pdf_dir = downloader_cfg.paths.pdf_dir_template.replace("{year}", str(year))
+        txt_dir = downloader_cfg.paths.txt_dir_template.replace("{year}", str(year))
+
+        legacy_config = ConverterConfig(
+            excel_file=excel_path,
+            pdf_dir=pdf_dir,
+            txt_dir=txt_dir,
+            target_year=year,
+            delete_pdf=downloader_cfg.behavior.delete_pdf,
+            max_retries=downloader_cfg.request.max_retries,
+            timeout=downloader_cfg.request.timeout,
+            chunk_size=downloader_cfg.request.chunk_size,
+            processes=downloader_cfg.processes,
+        )
+
+        processor = AnnualReportProcessor(legacy_config)
+        ok = processor.run()
+        if not ok:
+            raise SystemExit(1)
+        logging.info(f"{year}年年报处理完毕")
 
 
 def _run_with_embedded_config() -> None:
@@ -922,6 +989,10 @@ def main(argv: list[str]) -> None:
 
     args = parser.parse_args(argv[1:])
     _set_log_level(args.log_level)
+
+    if args.use_yaml_config:
+        _run_with_yaml_config(args)
+        return
 
     if args.use_config:
         _run_with_embedded_config()

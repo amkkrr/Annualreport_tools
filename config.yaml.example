@@ -1,0 +1,102 @@
+# Annualreport_tools 统一配置文件
+# 复制此文件为 config.yaml 并根据需要修改配置
+
+# 全局项目配置
+project:
+  # 基础工作目录，所有相对路径将基于此解析
+  workspace_root: "."
+  # 默认日志级别: DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"
+
+# 数据库配置 (DuckDB)
+database:
+  path: "data/annual_reports.duckdb"
+
+# 1. 爬虫模块配置 (Crawler)
+crawler:
+  # 目标年份列表，支持单年或多年
+  target_years: [2023]
+
+  # 请求控制
+  request:
+    timeout: 10
+    max_retries: 3
+    retry_delay: 5
+
+  # 过滤条件
+  filters:
+    # 板块列表: sz, sh, szmb, shmb, szcy, shkcp, bj
+    plates: ["sz", "sh"]
+    # 行业，留空表示全部
+    trade: ""
+    # 标题排除关键词
+    exclude_keywords:
+      - "英文"
+      - "已取消"
+      - "摘要"
+      - "更正后"
+
+  # 输出配置
+  output:
+    # 结果 Excel 路径模板，{year} 会被自动替换
+    excel_path_template: "res/AnnualReport_links_{year}.xlsx"
+    save_interval: 100
+
+# 2. 下载与转换模块配置 (Downloader & Converter)
+downloader:
+  # 并发进程数，null 表示自动 (CPU核心数)
+  processes: null
+
+  # 路径配置
+  paths:
+    # 输入 Excel 路径模板 (通常与 crawler.output.excel_path_template 一致)
+    input_excel_template: "res/AnnualReport_links_{year}.xlsx"
+    # PDF 下载目录模板
+    pdf_dir_template: "outputs/annual_reports/{year}/pdf"
+    # TXT 转换目录模板
+    txt_dir_template: "outputs/annual_reports/{year}/txt"
+
+  behavior:
+    # 下载完成后是否删除 PDF
+    delete_pdf: false
+    # 是否跳过已存在的 TXT
+    skip_existing: true
+    # 强制覆盖模式
+    force_overwrite: false
+
+  # 下载请求配置（独立于爬虫配置）
+  request:
+    timeout: 30
+    max_retries: 3
+    chunk_size: 8192
+    # 下载专用配置
+    stream: true
+    headers:
+      User-Agent: "Mozilla/5.0"
+
+# 3. 文本分析模块配置 (Analysis)
+analysis:
+  # 关键词列表（不能为空）
+  keywords:
+    - "人工智能"
+    - "商业智能"
+    - "大数据"
+    - "数据挖掘"
+    - "数字化转型"
+
+  paths:
+    # 分析结果输出路径，{timestamp} 格式为 YYYYMMDD_HHMMSS（本地时区）
+    output_excel: "outputs/analysis/keyword_counts_{timestamp}.xls"
+    # 待分析的文本根目录
+    text_root_dir: "outputs/annual_reports"
+
+# 4. MDA 提取模块配置 (MDA Extractor)
+mda:
+  limits:
+    max_pages: 50
+    max_chars: 200000
+
+  behavior:
+    # 增量更新模式
+    incremental: true
+    workers: 4

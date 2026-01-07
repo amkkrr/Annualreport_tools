@@ -7,10 +7,13 @@
 """多进程年报文本关键词分析器。"""
 
 from __future__ import annotations
+import argparse
 import logging
 import os
 import re
+import sys
 from dataclasses import dataclass
+from datetime import datetime
 from multiprocessing import Pool, cpu_count
 from typing import Iterator, List, Optional, Tuple
 import jieba
@@ -194,7 +197,116 @@ def validate_year_range(start_year: Optional[int], end_year: Optional[int]) -> N
         raise ValueError("起始年份不能大于结束年份")
 
 
-if __name__ == "__main__":
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """构建命令行参数解析器。"""
+    parser = argparse.ArgumentParser(
+        prog="3.text_analysis.py",
+        description="多进程年报文本关键词分析器，统计指定目录下TXT文件中的关键词词频。",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "--use-config",
+        action="store_true",
+        help="使用 config.yaml 配置文件运行（推荐）。",
+    )
+    parser.add_argument(
+        "--config", "-c",
+        default="config.yaml",
+        help="指定配置文件路径（默认 config.yaml）。",
+    )
+    parser.add_argument(
+        "--text-dir",
+        help="TXT 文件根目录（覆盖配置文件）。",
+    )
+    parser.add_argument(
+        "--output",
+        help="输出 Excel 文件路径（覆盖配置文件）。",
+    )
+    parser.add_argument(
+        "--start-year",
+        type=int,
+        help="起始年份（包含）。",
+    )
+    parser.add_argument(
+        "--end-year",
+        type=int,
+        help="结束年份（包含）。",
+    )
+    parser.add_argument(
+        "--processes", "-p",
+        type=int,
+        help="并行进程数（默认自动）。",
+    )
+    parser.add_argument(
+        "--log-level",
+        default=None,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="日志级别（覆盖配置文件）。",
+    )
+    return parser
+
+
+def _run_with_config(args: argparse.Namespace) -> None:
+    """使用配置文件运行分析器。"""
+    try:
+        from annual_report_mda.config_manager import (
+            load_config,
+            log_config_summary,
+        )
+    except ImportError as e:
+        logging.error(f"无法导入配置管理模块: {e}")
+        logging.error("请确保已安装依赖: pip install -r requirements.txt")
+        raise SystemExit(1)
+
+    try:
+        config = load_config(args.config)
+    except FileNotFoundError as e:
+        logging.error(str(e))
+        raise SystemExit(1)
+    except ValueError as e:
+        logging.error(str(e))
+        raise SystemExit(1)
+
+    if args.log_level:
+        logging.getLogger().setLevel(getattr(logging, args.log_level))
+    elif config.project.log_level:
+        logging.getLogger().setLevel(getattr(logging, config.project.log_level))
+
+    log_config_summary(config, logging.getLogger())
+
+    analysis_cfg = config.analysis
+
+    text_dir = args.text_dir or analysis_cfg.paths.text_root_dir
+
+    output_path = args.output
+    if not output_path:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = analysis_cfg.paths.output_excel.replace("{timestamp}", timestamp)
+
+    start_year = args.start_year
+    end_year = args.end_year
+
+    try:
+        validate_year_range(start_year, end_year)
+        analyzer = KeywordAnalyzer(
+            AnalyzerConfig(
+                folder_path=text_dir,
+                keywords=analysis_cfg.keywords,
+                output_path=output_path,
+                chunk_size=100,
+                start_year=start_year,
+                end_year=end_year,
+                processes=args.processes,
+            )
+        )
+        analyzer.run()
+    except Exception as exc:
+        logging.error("文件处理失败: %s", exc)
+        raise SystemExit(1)
+
+
+def _run_with_embedded_config() -> None:
+    """使用脚本底部嵌入配置运行（旧版兼容）。"""
     # 自定义关键词列表，可按需扩展/替换
     KEYWORDS = [
         "人工智能",
@@ -234,7 +346,29 @@ if __name__ == "__main__":
             )
         )
         analyzer.run()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logging.error("文件处理失败: %s", exc)
 
     print("提示：如果程序没有任何输出，请检查路径及 TXT 文件命名格式（如 600519_贵州茅台_2019.txt）。")
+
+
+def main(argv: list[str]) -> None:
+    """主入口函数。"""
+    parser = _build_arg_parser()
+
+    if len(argv) == 1:
+        print("提示: 无参数运行将使用脚本内置配置。使用 --use-config 启用配置文件模式。")
+        print("      使用 --help 查看更多选项。\n")
+        _run_with_embedded_config()
+        return
+
+    args = parser.parse_args(argv[1:])
+
+    if args.use_config:
+        _run_with_config(args)
+    else:
+        _run_with_embedded_config()
+
+
+if __name__ == "__main__":
+    main(sys.argv)

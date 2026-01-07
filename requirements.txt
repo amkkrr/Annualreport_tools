@@ -14,3 +14,7 @@ pdfminer.six>=20221105
 rich==13.7.1
 duckdb==0.10.3
 python-dotenv==1.0.1
+
+# Configuration management (1.1 unified configuration)
+PyYAML>=6.0
+pydantic>=2.0,<3.0

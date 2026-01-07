@@ -49,20 +49,31 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawTextHelpFormatter,
     )
 
-    group = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument(
+        "--use-config",
+        action="store_true",
+        help="使用 config.yaml 配置文件运行（推荐）。",
+    )
+    parser.add_argument(
+        "--config", "-c",
+        default="config.yaml",
+        help="指定配置文件路径（默认 config.yaml，需配合 --use-config）。",
+    )
+
+    group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--text", help="单文件模式：上游抽取的单个 *.txt。")
     group.add_argument("--dir", help="批量模式：扫描目录下所有 *.txt（递归）。")
 
     parser.add_argument("--db", default="data/annual_reports.duckdb", help="DuckDB 路径（默认 data/annual_reports.duckdb）。")
-    parser.add_argument("--workers", type=int, default=4, help="并发数（默认 4）。")
+    parser.add_argument("--workers", type=int, default=None, help="并发数（默认从配置文件读取或 4）。")
     parser.add_argument("--incremental", action="store_true", help="增量模式：幂等键已成功入库则跳过。")
     parser.add_argument("--dry-run", action="store_true", help="仅跑提取，不写入数据库。")
 
     parser.add_argument("--stock-code", help="覆盖自动解析的 stock_code（仅建议单文件调试用）。")
     parser.add_argument("--year", type=int, help="覆盖自动解析的 year（仅建议单文件调试用）。")
 
-    parser.add_argument("--max-pages", type=int, default=MAX_PAGES_DEFAULT, help=f"最大页数截断（默认 {MAX_PAGES_DEFAULT}）。")
-    parser.add_argument("--max-chars", type=int, default=MAX_CHARS_DEFAULT, help=f"最大字符截断（默认 {MAX_CHARS_DEFAULT}）。")
+    parser.add_argument("--max-pages", type=int, default=None, help=f"最大页数截断（默认从配置文件读取或 {MAX_PAGES_DEFAULT}）。")
+    parser.add_argument("--max-chars", type=int, default=None, help=f"最大字符截断（默认从配置文件读取或 {MAX_CHARS_DEFAULT}）。")
 
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="日志级别（默认 INFO）。")
 
@@ -248,6 +259,15 @@ def _submit_jobs(
 
 
 def _run_dry_run(args: argparse.Namespace) -> int:
+    """旧版 dry-run 入口（保持兼容）。"""
+    effective_workers = args.workers if args.workers is not None else 4
+    effective_max_pages = args.max_pages if args.max_pages is not None else MAX_PAGES_DEFAULT
+    effective_max_chars = args.max_chars if args.max_chars is not None else MAX_CHARS_DEFAULT
+    return _run_dry_run_internal(args, effective_workers, effective_max_pages, effective_max_chars)
+
+
+def _run_dry_run_internal(args: argparse.Namespace, workers: int, max_pages: int, max_chars: int) -> int:
+    """dry-run 内部实现。"""
     if args.text:
         path = Path(args.text)
         if not path.exists() or not path.is_file():
@@ -270,8 +290,8 @@ def _run_dry_run(args: argparse.Namespace) -> int:
                 "stock_code": stock_code,
                 "year": year,
                 "source_sha256": source_sha256,
-                "max_pages": args.max_pages,
-                "max_chars": args.max_chars,
+                "max_pages": max_pages,
+                "max_chars": max_chars,
                 "custom_start_pattern": None,
                 "custom_end_pattern": None,
             }
@@ -301,18 +321,18 @@ def _run_dry_run(args: argparse.Namespace) -> int:
                 "stock_code": stock_code,
                 "year": year,
                 "source_sha256": compute_file_sha256(path),
-                "max_pages": args.max_pages,
-                "max_chars": args.max_chars,
+                "max_pages": max_pages,
+                "max_chars": max_chars,
                 "custom_start_pattern": None,
                 "custom_end_pattern": None,
             }
         )
 
-    if not (args.workers > 0):
+    if not (workers > 0):
         raise SystemExit("--workers 必须 > 0")
 
     ok_count = 0
-    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+    with ProcessPoolExecutor(max_workers=workers) as pool:
         future_to_payload = {pool.submit(_extract_one_worker, p): p for p in payloads}
         for fut in as_completed(future_to_payload):
             try:
@@ -327,6 +347,171 @@ def _run_dry_run(args: argparse.Namespace) -> int:
     return 0 if err_count == 0 else 2
 
 
+def _run_with_yaml_config(args: argparse.Namespace) -> int:
+    """使用 YAML 配置文件运行 MDA 提取器。"""
+    try:
+        from annual_report_mda.config_manager import (
+            load_config,
+            log_config_summary,
+        )
+    except ImportError as e:
+        _LOG.error(f"无法导入配置管理模块: {e}")
+        _LOG.error("请确保已安装依赖: pip install -r requirements.txt")
+        return 1
+
+    try:
+        config = load_config(args.config)
+    except FileNotFoundError as e:
+        _LOG.error(str(e))
+        return 1
+    except ValueError as e:
+        _LOG.error(str(e))
+        return 1
+
+    if config.project.log_level:
+        configure_logging(config.project.log_level)
+
+    log_config_summary(config, _LOG)
+
+    mda_cfg = config.mda
+
+    workers = args.workers if args.workers is not None else mda_cfg.behavior.workers
+    max_pages = args.max_pages if args.max_pages is not None else mda_cfg.limits.max_pages
+    max_chars = args.max_chars if args.max_chars is not None else mda_cfg.limits.max_chars
+    incremental = args.incremental or mda_cfg.behavior.incremental
+    db_path = args.db if args.db != "data/annual_reports.duckdb" else str(config.database.path)
+
+    if args.text:
+        args_copy = argparse.Namespace(**vars(args))
+        if args.dry_run:
+            return _run_dry_run_internal(args_copy, workers, max_pages, max_chars)
+
+        conn = init_db(db_path)
+        path = Path(args.text)
+        if not path.exists() or not path.is_file():
+            raise SystemExit(f"文件不存在或不可读: {path}")
+
+        stock_code = args.stock_code
+        year = args.year
+        if stock_code is None or year is None:
+            inferred_stock, inferred_year = _infer_stock_year(path)
+            stock_code = stock_code or inferred_stock
+            year = year or inferred_year
+
+        if stock_code is None or year is None:
+            raise SystemExit("单文件模式无法推断 stock_code/year，请传 --stock-code 与 --year。")
+
+        source_sha256 = compute_file_sha256(path)
+        if incremental and should_skip_incremental(conn, stock_code=stock_code, year=year, source_sha256=source_sha256):
+            _LOG.info("增量跳过: %s", path)
+            return 0
+
+        rule_row = conn.execute(
+            """
+            SELECT start_pattern, end_pattern
+            FROM extraction_rules
+            WHERE stock_code = ? AND year = ?
+            LIMIT 1;
+            """,
+            (stock_code, year),
+        ).fetchone()
+
+        custom_start_pattern = rule_row[0] if rule_row else None
+        custom_end_pattern = rule_row[1] if rule_row else None
+
+        try:
+            res = _extract_one_worker(
+                {
+                    "path": str(path),
+                    "stock_code": stock_code,
+                    "year": year,
+                    "source_sha256": source_sha256,
+                    "max_pages": max_pages,
+                    "max_chars": max_chars,
+                    "custom_start_pattern": custom_start_pattern,
+                    "custom_end_pattern": custom_end_pattern,
+                }
+            )
+        except Exception as e:
+            insert_extraction_error(
+                conn,
+                stock_code=stock_code,
+                year=year,
+                source_path=str(path),
+                source_sha256=source_sha256,
+                error_type="EXTRACT_EXCEPTION",
+                error_message=str(e),
+            )
+            raise
+
+        if not res.get("ok"):
+            err = res["error"]
+            insert_extraction_error(
+                conn,
+                stock_code=err.get("stock_code"),
+                year=err.get("year"),
+                source_path=err.get("source_path") or str(path),
+                source_sha256=err.get("source_sha256") or source_sha256,
+                error_type=err.get("error_type") or "UNKNOWN",
+                error_message=err.get("error_message") or "",
+            )
+            return 2
+
+        record = MDAUpsertRecord(**res["record"])
+        upsert_mda_text(conn, record)
+        _LOG.info("写入完成: %s %s sha=%s", record.stock_code, record.year, record.source_sha256)
+        return 0
+
+    if args.dir:
+        root = Path(args.dir)
+    else:
+        _LOG.info("使用配置模式但未指定 --text 或 --dir，请指定输入路径。")
+        return 2
+
+    if not root.exists() or not root.is_dir():
+        raise SystemExit(f"目录不存在或不可读: {root}")
+
+    if args.dry_run:
+        args_copy = argparse.Namespace(**vars(args))
+        return _run_dry_run_internal(args_copy, workers, max_pages, max_chars)
+
+    conn = init_db(db_path)
+    paths = sorted(_iter_txt_files(root))
+    _LOG.info("扫描到 %d 个 TXT 文件", len(paths))
+
+    results = _submit_jobs(
+        conn=conn,
+        paths=paths,
+        workers=workers,
+        incremental=incremental,
+        max_pages=max_pages,
+        max_chars=max_chars,
+    )
+
+    ok_count = 0
+    err_count = 0
+    for item in results:
+        if item.get("ok") is True and item.get("record") is not None:
+            ok_count += 1
+            record = MDAUpsertRecord(**item["record"])
+            upsert_mda_text(conn, record)
+        else:
+            err_count += 1
+            err = item.get("error") or {}
+            insert_extraction_error(
+                conn,
+                stock_code=err.get("stock_code"),
+                year=err.get("year"),
+                source_path=err.get("source_path") or "",
+                source_sha256=err.get("source_sha256"),
+                error_type=err.get("error_type") or "UNKNOWN",
+                error_message=err.get("error_message") or "",
+            )
+
+    _LOG.info("完成: ok=%d err=%d", ok_count, err_count)
+    return 0 if err_count == 0 else 2
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     load_dotenv_if_present()
     parser = _build_parser()
@@ -334,8 +519,20 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     configure_logging(args.log_level)
 
+    if args.use_config:
+        return _run_with_yaml_config(args)
+
+    if not args.text and not args.dir:
+        parser.print_help()
+        print("\n错误: 必须指定 --text 或 --dir，或使用 --use-config 从配置文件运行。")
+        return 2
+
+    effective_workers = args.workers if args.workers is not None else 4
+    effective_max_pages = args.max_pages if args.max_pages is not None else MAX_PAGES_DEFAULT
+    effective_max_chars = args.max_chars if args.max_chars is not None else MAX_CHARS_DEFAULT
+
     if args.dry_run:
-        return _run_dry_run(args)
+        return _run_dry_run_internal(args, effective_workers, effective_max_pages, effective_max_chars)
 
     conn = init_db(args.db)
 
@@ -379,8 +576,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                     "stock_code": stock_code,
                     "year": year,
                     "source_sha256": source_sha256,
-                    "max_pages": args.max_pages,
-                    "max_chars": args.max_chars,
+                    "max_pages": effective_max_pages,
+                    "max_chars": effective_max_chars,
                     "custom_start_pattern": custom_start_pattern,
                     "custom_end_pattern": custom_end_pattern,
                 }
@@ -429,10 +626,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     results = _submit_jobs(
         conn=conn,
         paths=paths,
-        workers=args.workers,
+        workers=effective_workers,
         incremental=args.incremental,
-        max_pages=args.max_pages,
-        max_chars=args.max_chars,
+        max_pages=effective_max_pages,
+        max_chars=effective_max_chars,
     )
 
     ok_count = 0

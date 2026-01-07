@@ -50,3 +50,9 @@ data/
 *.zip
 *.tar
 *.tar.gz
+
+# User configuration (keep config.yaml.example)
+config.yaml
+config.local.yaml
+config.*.yaml
+!config.yaml.example
