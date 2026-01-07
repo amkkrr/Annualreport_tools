@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统架构图 - React Flow</title>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- React Flow -->
+    <script src="https://cdn.jsdelivr.net/npm/reactflow@11.10.4/dist/umd/index.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reactflow@11.10.4/dist/style.css" />
+    <!-- Dagre for Layout -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8f9fa;
+        }
+
+        #root {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Custom Node Styles mimicking modern dashboard/doubleloop style */
+        .react-flow__node {
+            font-size: 12px;
+            text-align: center;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            color: #1e293b;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 10px 15px;
+            font-weight: 500;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1.2;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .react-flow__node-group,
+        .react-flow__node-groupNode {
+            background-color: rgba(241, 245, 249, 0.5);
+            border: 1px dashed #cbd5e1;
+            border-radius: 12px;
+            overflow: visible;
+        }
+
+        .react-flow__node-groupNode {
+            padding: 0;
+            display: block;
+            box-shadow: none;
+        }
+
+        .react-flow__node.selected {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+        }
+
+        /* Group Headers */
+        .group-node {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .group-label {
+            position: absolute;
+            top: -18px;
+            left: 8px;
+            background: rgba(248, 250, 252, 0.92);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            border: 1px solid #e2e8f0;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-weight: 700;
+            font-size: 14px;
+            color: #475569;
+            text-align: left;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+            max-width: calc(100% - 16px);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Specific Node Colors based on function */
+        .node-input {
+            border-left: 4px solid #3b82f6;
+        }
+
+        /* Blue */
+        .node-process {
+            border-left: 4px solid #f59e0b;
+        }
+
+        /* Orange/Yellow */
+        .node-storage {
+            border-left: 4px solid #10b981;
+        }
+
+        /* Green */
+        .node-decision {
+            border-left: 4px solid #ef4444;
+            border-radius: 20px;
+        }
+
+        /* Red/Diamond-ish */
+
+        .react-flow__edge-path {
+            stroke: #94a3b8;
+            stroke-width: 2;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useCallback, useMemo } = React;
+        // In UMD build, ReactFlow is the default export containing the component,
+        // and other utilities are properties of it.
+        // We need to alias the component to avoid naming collision if we were destructuring,
+        // but here we just grab the main component and utilities from the global object.
+        const ReactFlowComponent = ReactFlow.ReactFlow;
+        const { Background, Controls, MiniMap, addEdge, MarkerType, Position, applyNodeChanges, applyEdgeChanges } = ReactFlow;
+
+        const GroupNode = ({ data }) => (
+            <div className="group-node">
+                <div className="group-label">{data?.label}</div>
+            </div>
+        );
+
+        // --- Data Definitions from System Architecture ---
+
+        const initialNodes = [
+            // --- Group 1: Data Collection ---
+            { id: 'S1', type: 'groupNode', draggable: false, selectable: false, data: { label: '第一阶段：数据采集' }, position: { x: 0, y: 0 }, style: { width: 400, height: 300 } },
+
+            { id: 'User', parentNode: 'S1', data: { label: '用户配置 (年份/行业)' }, position: { x: 30, y: 40 }, className: 'node-input', extent: 'parent' },
+            { id: 'ExtService', parentNode: 'S1', data: { label: '巨潮资讯网 API' }, position: { x: 200, y: 40 }, className: 'node-input', extent: 'parent' },
+            { id: 'Crawler', parentNode: 'S1', data: { label: '1.report_link_crawler.py' }, position: { x: 115, y: 120 }, className: 'node-process', extent: 'parent' },
+            { id: 'LinkExcel', parentNode: 'S1', data: { label: 'Excel 链接表' }, position: { x: 115, y: 200 }, className: 'node-storage', extent: 'parent' },
+
+            // --- Group 2: Processing ---
+            { id: 'S2', type: 'groupNode', draggable: false, selectable: false, data: { label: '第二阶段：文档获取与清洗' }, position: { x: 0, y: 350 }, style: { width: 600, height: 500 } },
+
+            { id: 'LocalPDF', parentNode: 'S2', data: { label: '本地 PDF 目录' }, position: { x: 50, y: 50 }, className: 'node-storage', extent: 'parent' },
+            { id: 'Downloader', parentNode: 'S2', data: { label: '2.pdf_batch_converter.py' }, position: { x: 250, y: 50 }, className: 'node-process', extent: 'parent' },
+            { id: 'RawPDF', parentNode: 'S2', data: { label: 'PDF 文件' }, position: { x: 250, y: 130 }, className: 'node-storage', extent: 'parent' },
+            { id: 'Validator', parentNode: 'S2', data: { label: '校验成功?' }, position: { x: 250, y: 210 }, className: 'node-decision', extent: 'parent' },
+            { id: 'Retry', parentNode: 'S2', data: { label: '重试下载' }, position: { x: 50, y: 210 }, className: 'node-process', extent: 'parent' },
+            { id: 'Converter', parentNode: 'S2', data: { label: 'PDF 转 TXT 引擎' }, position: { x: 450, y: 210 }, className: 'node-process', extent: 'parent' },
+
+            // Engines
+            { id: 'Backend1', parentNode: 'S2', data: { label: 'pdfplumber' }, position: { x: 350, y: 300 }, className: 'node-process', extent: 'parent' },
+            { id: 'Backend2', parentNode: 'S2', data: { label: 'PyPDF2' }, position: { x: 450, y: 300 }, className: 'node-process', extent: 'parent' },
+            { id: 'Backend3', parentNode: 'S2', data: { label: 'pdfminer' }, position: { x: 550, y: 300 }, className: 'node-process', extent: 'parent' },
+
+            { id: 'RawTXT', parentNode: 'S2', data: { label: 'TXT 文本文件' }, position: { x: 450, y: 400 }, className: 'node-storage', extent: 'parent' },
+
+            // --- Group 3: Analysis ---
+            { id: 'S3', type: 'groupNode', draggable: false, selectable: false, data: { label: '第三阶段：数据分析' }, position: { x: 0, y: 900 }, style: { width: 500, height: 300 } },
+
+            { id: 'UnivAnalyzer', parentNode: 'S3', data: { label: 'text_analysis_universal.py' }, position: { x: 50, y: 100 }, className: 'node-process', extent: 'parent' },
+            { id: 'Analyzer', parentNode: 'S3', data: { label: '3.text_analysis.py' }, position: { x: 250, y: 100 }, className: 'node-process', extent: 'parent' },
+            { id: 'Dict', parentNode: 'S3', data: { label: 'jieba 自定义词典' }, position: { x: 250, y: 20 }, className: 'node-input', extent: 'parent' },
+            { id: 'ResultExcel', parentNode: 'S3', data: { label: '词频统计结果.xls' }, position: { x: 250, y: 200 }, className: 'node-storage', extent: 'parent' },
+        ];
+
+        const initialEdges = [
+            // S1
+            { id: 'e1-1', source: 'User', target: 'Crawler', label: '配置' },
+            { id: 'e1-2', source: 'ExtService', target: 'Crawler', label: 'API数据' },
+            { id: 'e1-3', source: 'Crawler', target: 'ExtService', label: '请求' },
+            { id: 'e1-4', source: 'Crawler', target: 'LinkExcel', label: '增量保存' },
+
+            // S1 -> S2
+            { id: 'e-link', source: 'LinkExcel', target: 'Downloader', label: '读取链接', animated: true, style: { stroke: '#2563eb' } },
+
+            // S2
+            { id: 'e2-1', source: 'LocalPDF', target: 'Downloader', label: '纯转换模式' },
+            { id: 'e2-2', source: 'Downloader', target: 'RawPDF', label: '多进程下载' },
+            { id: 'e2-3', source: 'RawPDF', target: 'Validator', label: '校验' },
+            { id: 'e2-4', source: 'Validator', target: 'Retry', label: 'No', labelStyle: { fill: 'red', fontWeight: 700 } },
+            { id: 'e2-5', source: 'Validator', target: 'Converter', label: 'Yes', labelStyle: { fill: 'green', fontWeight: 700 } },
+
+            { id: 'e2-6', source: 'Converter', target: 'Backend1', label: '首选' },
+            { id: 'e2-7', source: 'Backend1', target: 'Backend2', label: '失败', animated: true, style: { stroke: 'orange' } },
+            { id: 'e2-8', source: 'Backend2', target: 'Backend3', label: '失败', animated: true, style: { stroke: 'orange' } },
+
+            { id: 'e2-9', source: 'Backend1', target: 'RawTXT' },
+            { id: 'e2-10', source: 'Backend2', target: 'RawTXT' },
+            { id: 'e2-11', source: 'Backend3', target: 'RawTXT' },
+
+            // S2 -> S3
+            { id: 'e-txt', source: 'RawTXT', target: 'Analyzer', label: '输入', animated: true, style: { stroke: '#2563eb' } },
+            { id: 'e-univ', source: 'RawTXT', target: 'UnivAnalyzer', label: '输入', animated: true, style: { stroke: '#2563eb' } },
+
+            // S3
+            { id: 'e3-1', source: 'Dict', target: 'Analyzer', label: '注入关键词', style: { strokeDasharray: '5,5' } },
+            { id: 'e3-2', source: 'Analyzer', target: 'ResultExcel', label: '生成报表' },
+        ];
+
+        const STAGE_ORDER = ['S1', 'S2', 'S3'];
+        const STAGE_GAP = 96;
+
+        const GROUP_PADDING = {
+            top: 56,
+            right: 28,
+            bottom: 28,
+            left: 28,
+        };
+
+        const CHILD_NODE_WIDTH = 190;
+        const CHAR_PER_LINE = 16;
+        const MAX_LINES = 3;
+
+        const MIN_GROUP_WIDTH = 320;
+        const MIN_GROUP_HEIGHT = 220;
+
+        function estimateChildNodeSize(node) {
+            const label = String(node?.data?.label ?? '');
+            const lines = Math.min(MAX_LINES, Math.max(1, Math.ceil(label.length / CHAR_PER_LINE)));
+            const height = 24 + lines * 18;
+            return { width: CHILD_NODE_WIDTH, height };
+        }
+
+        function layoutStages(nodes, edges) {
+            const clonedNodes = nodes.map((n) => ({
+                ...n,
+                position: { ...(n.position || { x: 0, y: 0 }) },
+                style: { ...(n.style || {}) },
+            }));
+
+            const nodeById = new Map(clonedNodes.map((n) => [n.id, n]));
+            const childIdsByStage = new Map(
+                STAGE_ORDER.map((stageId) => [
+                    stageId,
+                    clonedNodes.filter((n) => n.parentNode === stageId).map((n) => n.id),
+                ])
+            );
+
+            // 1) Layout children within each stage using dagre
+            for (const stageId of STAGE_ORDER) {
+                const childIds = childIdsByStage.get(stageId) || [];
+                const children = childIds.map((id) => nodeById.get(id)).filter(Boolean);
+
+                const sizeById = new Map();
+                for (const child of children) {
+                    const size = estimateChildNodeSize(child);
+                    sizeById.set(child.id, size);
+                    child.style = { ...child.style, width: size.width, height: size.height };
+                    child.sourcePosition = Position.Bottom;
+                    child.targetPosition = Position.Top;
+                }
+
+                const g = new dagre.graphlib.Graph();
+                g.setDefaultEdgeLabel(() => ({}));
+                g.setGraph({
+                    rankdir: 'TB',
+                    nodesep: 28,
+                    ranksep: 52,
+                    marginx: 0,
+                    marginy: 0,
+                });
+
+                for (const child of children) {
+                    const size = sizeById.get(child.id);
+                    g.setNode(child.id, { width: size.width, height: size.height });
+                }
+
+                for (const e of edges) {
+                    if (childIds.includes(e.source) && childIds.includes(e.target)) {
+                        g.setEdge(e.source, e.target);
+                    }
+                }
+
+                dagre.layout(g);
+
+                const rawPosById = new Map();
+                let minX = Infinity;
+                let minY = Infinity;
+                let maxX = -Infinity;
+                let maxY = -Infinity;
+
+                for (const child of children) {
+                    const size = sizeById.get(child.id);
+                    const p = g.node(child.id);
+                    const x = p.x - size.width / 2;
+                    const y = p.y - size.height / 2;
+
+                    rawPosById.set(child.id, { x, y });
+
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x + size.width);
+                    maxY = Math.max(maxY, y + size.height);
+                }
+
+                if (!isFinite(minX) || !isFinite(minY)) {
+                    minX = 0;
+                    minY = 0;
+                    maxX = 0;
+                    maxY = 0;
+                }
+
+                const shiftX = GROUP_PADDING.left - minX;
+                const shiftY = GROUP_PADDING.top - minY;
+
+                for (const child of children) {
+                    const p = rawPosById.get(child.id);
+                    child.position = { x: p.x + shiftX, y: p.y + shiftY };
+                }
+
+                const stageNode = nodeById.get(stageId);
+                const stageWidth = (maxX - minX) + GROUP_PADDING.left + GROUP_PADDING.right;
+                const stageHeight = (maxY - minY) + GROUP_PADDING.top + GROUP_PADDING.bottom;
+
+                stageNode.style = {
+                    ...stageNode.style,
+                    width: Math.ceil(Math.max(MIN_GROUP_WIDTH, stageWidth)),
+                    height: Math.ceil(Math.max(MIN_GROUP_HEIGHT, stageHeight)),
+                };
+            }
+
+            // 2) Stack stages vertically based on computed sizes
+            let cursorY = 0;
+            let maxStageWidth = 0;
+            for (const stageId of STAGE_ORDER) {
+                const stageNode = nodeById.get(stageId);
+                const w = stageNode.style?.width || 0;
+                maxStageWidth = Math.max(maxStageWidth, w);
+                stageNode.position = { x: 0, y: cursorY };
+                cursorY += (stageNode.style?.height || 300) + STAGE_GAP;
+            }
+
+            for (const stageId of STAGE_ORDER) {
+                const stageNode = nodeById.get(stageId);
+                const w = stageNode.style?.width || 0;
+                stageNode.position = { x: Math.round((maxStageWidth - w) / 2), y: stageNode.position.y };
+            }
+
+            return Array.from(nodeById.values());
+        }
+
+        function App() {
+            const [nodes, setNodes] = useState(() => layoutStages(initialNodes, initialEdges));
+            const [edges, setEdges] = useState(initialEdges);
+
+            const nodeTypes = useMemo(() => ({ groupNode: GroupNode }), []);
+            const defaultEdgeOptions = useMemo(
+                () => ({
+                    type: 'smoothstep',
+                    markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
+                }),
+                []
+            );
+
+            const onNodesChange = useCallback(
+                (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
+                [setNodes]
+            );
+            const onEdgesChange = useCallback(
+                (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+                [setEdges]
+            );
+
+            const onConnect = useCallback((params) => setEdges((eds) => addEdge(params, eds)), [setEdges]);
+
+            return (
+                <div style={{ width: '100vw', height: '100vh' }}>
+                    <ReactFlowComponent
+                        nodes={nodes}
+                        edges={edges}
+                        nodeTypes={nodeTypes}
+                        defaultEdgeOptions={defaultEdgeOptions}
+                        onNodesChange={onNodesChange}
+                        onEdgesChange={onEdgesChange}
+                        onConnect={onConnect}
+                        fitView
+                        attributionPosition="bottom-right"
+                    >
+                        <Background color="#ccc" gap={20} />
+                        <Controls />
+                        <MiniMap />
+                    </ReactFlowComponent>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
