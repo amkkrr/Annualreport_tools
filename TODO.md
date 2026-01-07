@@ -128,6 +128,74 @@ duckdb data/annual_reports.duckdb "SELECT stock_code, year, quality_score FROM m
 
 ---
 
+## Phase 2.5: MD&A 提取器增强 — mda_extractor.py
+
+> 目标：完善 MD&A 提取器的测试覆盖、质检能力和 LLM 自适应学习功能。
+
+### 2.5.1 端到端测试验证（高优先）
+
+- [ ] `P1` 编写 `calculate_mda_score` 单元测试，覆盖各评分维度
+- [ ] `P1` 编写 `extract_mda_iterative` 单元测试，验证迭代策略逻辑
+- [ ] `P1` 创建集成测试：端到端跑测 + 增量逻辑验证
+- [ ] `P1` 准备 Mock 数据集：含/不含目录、含/不含页分隔符的样本
+
+### 2.5.2 质检增强
+
+- [ ] `P1` 实现 L3 时序校验（FLAG_YOY_CHANGE_HIGH），检测年际变化异常
+- [ ] `P1` 创建质检 SQL 视图 `mda_text_latest`，简化查询流程
+
+### 2.5.3 文档与分支管理
+
+- [ ] `P1` 更新主 README.md，补充 `mda_extractor.py` 使用说明
+- [ ] `P2` 编写开发者指南，说明策略扩展方式
+- [ ] `P1` 合并 `feature/mda-extractor-spec` 分支到 `main`（或在 main 继续开发）
+
+### 2.5.4 LLM 自适应学习（规格书 §10）
+
+- [ ] `P2` 实现 LLM API 客户端，支持 DeepSeek/Qwen/GPT-4o-mini
+- [ ] `P2` 设计 Prompt 模板：分析目录结构，提取 start/end pattern
+- [ ] `P2` 实现规则写入 `extraction_rules` 表的逻辑
+- [ ] `P2` 添加 `--learn` 参数支持，启用自适应学习模式
+- [ ] `P2` 实现失败熔断与降级机制（API 调用失败时回退到 CPU 策略）
+
+### 📍 里程碑 M2.5: MD&A 提取器测试与质检完备
+
+#### 功能验收（必须通过）
+
+| ID | 验收项 | Given | When | Then |
+|----|--------|-------|------|------|
+| M2.5-01 | 评分单测 | 测试用例准备完毕 | 执行 `pytest tests/test_scorer.py` | 所有测试通过，覆盖率 ≥ 80% |
+| M2.5-02 | 提取单测 | Mock 数据准备完毕 | 执行 `pytest tests/test_extractor.py` | 含/不含目录样本均正确处理 |
+| M2.5-03 | 集成测试 | 测试数据库初始化 | 执行端到端测试 | 增量逻辑正确，已处理文件不重复提取 |
+| M2.5-04 | 时序校验 | 同一公司连续两年 MDA 文本 | 执行质检 | 正确识别 FLAG_YOY_CHANGE_HIGH |
+| M2.5-05 | README 更新 | 文档修改完成 | 阅读 README.md | 包含 mda_extractor.py 的完整使用说明 |
+
+#### 质量验收（建议通过）
+
+| ID | 验收项 | 指标 |
+|----|--------|------|
+| M2.5-Q1 | 单测覆盖率 | `annual_report_mda/` 模块覆盖率 ≥ 70% |
+| M2.5-Q2 | 测试执行时间 | 全部单测运行 < 30s |
+| M2.5-Q3 | 文档完整性 | README 包含快速开始、参数说明、输出格式 |
+
+#### 测试命令
+
+```bash
+# 运行 M2.5 相关测试
+pytest tests/test_mda_*.py -v
+
+# 运行评分器单测
+pytest tests/test_scorer.py -v --cov=annual_report_mda.scorer
+
+# 运行提取器单测
+pytest tests/test_extractor.py -v --cov=annual_report_mda.strategies
+
+# 端到端集成测试
+pytest tests/test_mda_integration.py -v
+```
+
+---
+
 ## Phase 3: 分析赋能 — NLP 深度挖掘
 
 > 目标：基于清洗后的高质量数据，进行深度价值挖掘。
@@ -254,13 +322,14 @@ ls -la logs/
 |--------|-----------|------|-----------|
 | **M1** | 配置统一 + DuckDB 写入跑通 | - | 6 功能 + 3 质量 |
 | **M2** | 全流程 DuckDB 驱动 + 质量评估体系 | M1 | 6 功能 + 3 质量 |
-| **M3** | NLP 分析模块可用 | M2 | 5 功能 + 3 质量 |
+| **M2.5** | MD&A 提取器测试与质检完备 | M2 | 5 功能 + 3 质量 |
+| **M3** | NLP 分析模块可用 | M2.5 | 5 功能 + 3 质量 |
 | **M4** | CI/CD + 日志系统 | 可与 M1-M3 并行 | 5 功能 + 3 质量 |
 
 ```
-M1 ──────► M2 ──────► M3
-              ↑
-M4 (可并行) ──┘
+M1 ──────► M2 ──────► M2.5 ──────► M3
+                        ↑
+M4 (可并行) ────────────┘
 ```
 
 ---

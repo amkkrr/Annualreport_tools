@@ -140,15 +140,27 @@ pip install -r requirements.txt
 
 为了方便开发者更好地理解和参与本项目，我们提供了详细的架构与设计文档：
 
+### 架构与设计
 - **[系统架构图 (System Architecture)](./docs/system_architecture.md)**：数据流向与模块交互图解。
+- **[架构预览 (Preview Architecture)](./docs/preview_architecture.md)**：架构设计预览与演进说明。
 - **[功能清单 (Feature List)](./docs/feature_list.md)**：详细的功能点梳理。
 - **[依赖关系图 (Dependency Graph)](./docs/dependency_graph.md)**：外部库与服务依赖分析。
 - **[技术债与优化清单 (Technical Debt)](./docs/technical_debt.md)**：已知问题与未来改进计划。
+
+### 模块文档
+- **[PDF 批量转换器手册](./docs/pdf_batch_converter_manual.md)**：pdf_batch_converter.py 使用指南。
+- **[纯转换模式用户指南](./docs/convert_only_mode_user_guide.md)**：convert 子命令的使用说明。
+- **[纯转换模式维护文档](./docs/convert_only_mode_maintenance.md)**：convert 模式的开发维护指南。
+- **[文本分析评审](./docs/text_analysis_review.md)**：文本分析模块的代码评审报告。
+
+### 规格与审计
+- **[MD&A 提取器规格审计](./docs/annual_report_mda_extractor_spec_audit.md)**：MD&A 提取器规格书的审计报告。
 
 ## 更新日志
 
 | 日期       | 亮点                                                          |
 | ---------- | ------------------------------------------------------------- |
+| 2026/01/07 | 新增 M2.5 里程碑（MD&A 提取器测试与质检），扩充技术文档索引   |
 | 2026/01/07 | 添加 MD&A 提取器使用说明、数据库 schema.json                  |
 | 2026/01/02 | 新增 MD&A 提取器模块（annual_report_mda 包）                  |
 | 2026/01/02 | 添加技术文档：系统架构图、功能清单、依赖关系图、技术债清单    |
@@ -169,6 +181,7 @@ pip install -r requirements.txt
 
 - [ ] **M1 配置统一 + DuckDB 底座** — 统一配置管理，DuckDB 替代 Excel 作为数据枢纽
 - [ ] **M2 结构化提取 + 质量评估** — 提升 MD&A 提取准确率，建立质量评分闭环
+- [ ] **M2.5 MD&A 提取器测试与质检** — 端到端测试、质检增强、文档完善
 - [ ] **M3 NLP 深度分析** — 情感分析、相似度分析、LDA 主题模型
 - [ ] **M4 工程化基础设施** — CI/CD 流水线、日志系统、测试覆盖
 - [ ] **M5 长期规划** — 云端存储、API 服务化
