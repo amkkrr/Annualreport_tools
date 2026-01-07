@@ -43,8 +43,9 @@
 2. **pdf_batch_converter.py** – 具有MIME验证的鲁棒PDF下载器 + 转换为TXT。
 3. **text_analysis.py** – 多进程关键词分析器 + Excel导出。
 4. **text_analysis_universal.py** – 接受任意TXT目录的轻量级分析器。
-5. **资源文件（`/res`）** – 精选的年报主表和文档图标资源。
-6. **文档文件夹** – 存储在`docs/`下的双语文档，方便切换。
+5. **mda_extractor.py** – 从年报文本中提取「管理层讨论与分析」(MD&A) 章节，支持多策略迭代提取。
+6. **资源文件（`/res`）** – 精选的年报主表和文档图标资源。
+7. **文档文件夹** – 存储在`docs/`下的双语文档，方便切换。
 
 ## 快速开始
 
@@ -62,6 +63,7 @@
 | `2.pdf_batch_converter.py`                | 批量下载 + pdfplumber转换，带文件验证     |
 | `3.text_analysis.py`                      | 多进程关键词分析，Excel导出               |
 | `text_analysis_universal.py`              | 适用于任意TXT文件夹的轻量级分析器         |
+| `mda_extractor.py`                        | MD&A 章节提取器，支持批量处理与增量模式   |
 | `./res/AnnualReport_links_2004_2023.xlsx` | 涵盖2004-2023年的精选主表                 |
 
 ## 脚本索引（旧版编号）
@@ -70,6 +72,58 @@
 2. `2.pdf_batch_converter.py`（原 `2.PDF转码.py`）
 3. `3.text_analysis.py`（原 `3.文本分析.py`）
 4. `text_analysis_universal.py`（原 `文本分析-universal.py`）
+5. `mda_extractor.py` — MD&A 章节提取器（新增）
+
+## MD&A 提取器使用说明
+
+`mda_extractor.py` 用于从已转换的年报文本 (`*.txt`) 中提取「管理层讨论与分析」章节，采用 **TOC 解析 + 正文扫描 + 质量评分** 的多策略迭代方法。
+
+### 基本用法
+
+```bash
+# 单文件模式
+python mda_extractor.py --text data/annual_reports_text/000778/2023.txt
+
+# 批量模式（递归扫描目录）
+python mda_extractor.py --dir data/annual_reports_text/ --workers 4
+
+# 增量模式（跳过已成功入库的文件）
+python mda_extractor.py --dir data/annual_reports_text/ --incremental
+
+# 仅统计，不写入数据库
+python mda_extractor.py --dir data/annual_reports_text/ --dry-run
+```
+
+### 参数说明
+
+| 参数            | 说明                                          |
+| --------------- | --------------------------------------------- |
+| `--text`        | 单文件模式：指定单个 `*.txt` 文件             |
+| `--dir`         | 批量模式：递归扫描目录下所有 `*.txt`          |
+| `--db`          | 数据库路径，默认 `data/annual_reports.duckdb` |
+| `--workers`     | 并发进程数，默认 4                            |
+| `--incremental` | 增量模式：已成功入库的文件自动跳过            |
+| `--dry-run`     | 仅执行提取，不写入数据库                      |
+| `--max-pages`   | 最大页数截断，默认 15                         |
+| `--max-chars`   | 最大字符截断，默认 120,000                    |
+| `--stock-code`  | 手动指定股票代码（覆盖自动解析）              |
+| `--year`        | 手动指定年份（覆盖自动解析）                  |
+| `--log-level`   | 日志级别：DEBUG / INFO / WARNING / ERROR      |
+
+### 输入要求
+
+- 输入文件为上游 `pdf_batch_converter.py` 产出的 `*.txt`
+- 文件名或目录结构需包含 6 位股票代码和 4 位年份，如 `600519_贵州茅台_2023.txt` 或 `000778/2023.txt`
+- 推荐使用 `\f` (Form Feed) 或 `=== Page X ===` 作为页分隔符
+
+### 输出
+
+提取结果存入 DuckDB 数据库 `mda_text` 表，包含：
+- `mda_raw`: 提取的 MD&A 原文
+- `char_count`: 字符数
+- `page_index_start/end`: 页范围
+- `quality_flags`: 质量标记（如 `FLAG_LENGTH_ABNORMAL`）
+- `source_sha256`: 源文件哈希（用于增量判定）
 
 ## 依赖要求
 
@@ -95,6 +149,11 @@ pip install -r requirements.txt
 
 | 日期       | 亮点                                                          |
 | ---------- | ------------------------------------------------------------- |
+| 2026/01/07 | 添加 MD&A 提取器使用说明、数据库 schema.json                  |
+| 2026/01/02 | 新增 MD&A 提取器模块（annual_report_mda 包）                  |
+| 2026/01/02 | 添加技术文档：系统架构图、功能清单、依赖关系图、技术债清单    |
+| 2026/01/01 | 重构 PDF 批量转换器，支持 argparse 命令行接口                 |
+| 2026/01/01 | 添加纯转换模式用户指南、维护文档                              |
 | 2025/11/21 | 代码优化：添加类型提示，改进错误处理，增强所有脚本的鲁棒性    |
 | 2025/11/21 | README切换为英文默认 + 免责声明，多进程分析器，添加docs文件夹 |
 | 2025/03/15 | 添加requirements文件，下载器现在支持其他公告                  |
