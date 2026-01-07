@@ -8,6 +8,7 @@ graph LR
         Crawler[爬虫脚本<br>1.report_link_crawler.py]
         Converter[转换脚本<br>2.pdf_batch_converter.py]
         Analyzer[分析脚本<br>3.text_analysis.py]
+        MDAExtractor[MD&A 提取器<br>mda_extractor.py]
     end
 
     subgraph ExtService [外部服务]
@@ -34,6 +35,15 @@ graph LR
         jieba[jieba]
     end
 
+    subgraph Storage [数据存储]
+        duckdb[duckdb]
+    end
+
+    subgraph Utility [工具库]
+        rich[rich]
+        dotenv[python-dotenv]
+    end
+
     %% 爬虫依赖
     Crawler --> requests
     Crawler --> openpyxl
@@ -43,10 +53,15 @@ graph LR
     Converter --> pandas
     Converter --> requests
     Converter --> PDFEngine
-    
+
     %% 分析依赖
     Analyzer --> jieba
     Analyzer --> xlwt
+
+    %% MD&A 提取器依赖
+    MDAExtractor --> duckdb
+    MDAExtractor --> rich
+    MDAExtractor --> dotenv
 ```
 
 ## 核心依赖说明
@@ -61,3 +76,6 @@ graph LR
 | **jieba**        | `==0.42.1`   | 中文分词库，用于分析模块提取关键词。                      |
 | **openpyxl**     | `==3.1.5`    | 用于爬虫模块将抓取结果写入 `.xlsx` 文件。                 |
 | **xlwt**         | `==1.3.0`    | 用于分析模块将词频统计结果写入老版本 `.xls` 文件。        |
+| **duckdb**       | `>=0.9.0`    | 用于 MD&A 提取器存储提取结果。                            |
+| **rich**         | `>=13.0.0`   | 用于 MD&A 提取器的进度条与日志美化。                      |
+| **python-dotenv**| `>=1.0.0`    | 用于 MD&A 提取器从 `.env` 加载配置。                      |
