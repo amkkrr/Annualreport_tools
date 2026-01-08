@@ -221,10 +221,15 @@ class DateRangeGenerator:
 
 class AnnualReportCrawler:
     """年报爬虫主类。"""
-    
-    def __init__(self, config: CrawlerConfig) -> None:
+
+    def __init__(
+        self,
+        config: CrawlerConfig,
+        db_conn: Optional["duckdb.DuckDBPyConnection"] = None,
+    ) -> None:
         self.config = config
         self.client = CNINFOClient(config)
+        self.db_conn = db_conn  # 可选的数据库连接，用于 DuckDB 模式
     
     def _clean_title(self, title: str) -> str:
         """清理标题。"""
@@ -304,6 +309,41 @@ class AnnualReportCrawler:
         
         workbook.save(output_path)
         logging.info(f"Excel文件保存成功: {output_path}")
+
+    def _save_to_duckdb(self, data: List[Dict[str, str]]) -> tuple:
+        """保存数据到 DuckDB。返回 (新增数, 跳过数)。"""
+        if self.db_conn is None:
+            raise RuntimeError("未提供数据库连接")
+
+        from annual_report_mda.db import upsert_company, insert_report
+
+        new_count = 0
+        skip_count = 0
+
+        for item in data:
+            # 先 upsert 公司信息
+            upsert_company(
+                self.db_conn,
+                stock_code=item["company_code"],
+                short_name=item["company_name"],
+            )
+
+            # 插入年报记录（增量）
+            is_new = insert_report(
+                self.db_conn,
+                stock_code=item["company_code"],
+                year=int(item["year"]),
+                url=item["url"],
+                title=item["title"],
+                source="cninfo",
+            )
+
+            if is_new:
+                new_count += 1
+            else:
+                skip_count += 1
+
+        return new_count, skip_count
     
     def run(self) -> None:
         """执行爬取任务。"""
@@ -343,26 +383,33 @@ class AnnualReportCrawler:
                 else:
                     filtered_count += 1
             
-            # 增量保存
-            if len(parsed_data) >= self.config.save_interval:
+            # 增量保存 (仅 Excel 模式)
+            if self.db_conn is None and len(parsed_data) >= self.config.save_interval:
                 self._save_to_excel(parsed_data, str(output_path))
                 logging.info(f"增量保存: 已保存 {len(parsed_data)} 条有效记录")
-            
+
             # 避免请求过快
             if idx < len(date_ranges):
                 time.sleep(0.5)
-        
+
         # 最终保存
         if parsed_data:
-            self._save_to_excel(parsed_data, str(output_path))
-        
+            if self.db_conn is not None:
+                new_count, skip_count = self._save_to_duckdb(parsed_data)
+                logging.info(f"DuckDB 写入完成: 新增 {new_count}, 跳过(已存在) {skip_count}")
+            else:
+                self._save_to_excel(parsed_data, str(output_path))
+
         # 统计信息
         logging.info("="*60)
         logging.info(f"爬取完成统计:")
         logging.info(f"  原始记录: {total_raw_count} 条")
         logging.info(f"  过滤记录: {filtered_count} 条")
         logging.info(f"  有效记录: {len(parsed_data)} 条")
-        logging.info(f"  保存路径: {output_path}")
+        if self.db_conn is None:
+            logging.info(f"  保存路径: {output_path}")
+        else:
+            logging.info(f"  保存模式: DuckDB")
         logging.info("="*60)
         logging.info(f"{self.config.target_year}年年报爬取完成")
         logging.info("="*60)
@@ -401,6 +448,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--timeout",
         type=int,
         help="请求超时秒数（覆盖配置文件）。",
+    )
+    parser.add_argument(
+        "--output-mode",
+        choices=["excel", "duckdb"],
+        default="duckdb",
+        help="输出模式: excel (旧版) 或 duckdb (推荐，默认)。",
+    )
+    parser.add_argument(
+        "--legacy",
+        action="store_true",
+        help="等同于 --output-mode excel，兼容旧版工作流。",
     )
     return parser
 
@@ -443,6 +501,21 @@ def _run_with_config(args: argparse.Namespace) -> None:
 
     log_config_summary(config, logging.getLogger())
 
+    # 确定输出模式
+    use_duckdb = not args.legacy and args.output_mode == "duckdb"
+
+    # 初始化数据库连接（DuckDB 模式）
+    db_conn = None
+    if use_duckdb:
+        try:
+            from annual_report_mda.db import init_db
+            db_path = config.database.path
+            db_conn = init_db(db_path)
+            logging.info(f"DuckDB 模式: 数据将写入 {db_path}")
+        except ImportError as e:
+            logging.error(f"无法导入数据库模块: {e}")
+            raise SystemExit(1)
+
     crawler_cfg = config.crawler
     for year in crawler_cfg.target_years:
         plates_str = ";".join(crawler_cfg.filters.plates)
@@ -459,9 +532,12 @@ def _run_with_config(args: argparse.Namespace) -> None:
             strict_year_check=True,
         )
 
-        crawler = AnnualReportCrawler(legacy_config)
+        crawler = AnnualReportCrawler(legacy_config, db_conn=db_conn)
         crawler.run()
         logging.info(f"{year}年处理完成")
+
+    if db_conn is not None:
+        db_conn.close()
 
 
 def _run_with_embedded_config() -> None:

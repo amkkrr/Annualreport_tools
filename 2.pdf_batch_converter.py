@@ -591,11 +591,16 @@ def _process_task(args: Tuple) -> bool:
 
 class AnnualReportProcessor:
     """年报批量处理器。"""
-    
-    def __init__(self, config: ConverterConfig) -> None:
+
+    def __init__(
+        self,
+        config: ConverterConfig,
+        db_conn: Optional["duckdb.DuckDBPyConnection"] = None,
+    ) -> None:
         self.config = config
         self.converter = PDFConverter(config)
-    
+        self.db_conn = db_conn  # 可选的数据库连接，用于 DuckDB 模式
+
     def _load_excel_data(self) -> Optional[pd.DataFrame]:
         """加载Excel数据。"""
         try:
@@ -640,6 +645,53 @@ class AnnualReportProcessor:
         filtered = df[df['年份'].astype(str) == str(self.config.target_year)]
         logging.info(f"找到 {len(filtered)} 条 {self.config.target_year} 年的记录")
         return filtered
+
+    def _load_tasks_from_duckdb(self) -> list:
+        """从 DuckDB 加载待处理任务。"""
+        if self.db_conn is None:
+            raise RuntimeError("未提供数据库连接")
+
+        from annual_report_mda.db import get_pending_downloads
+
+        tasks = get_pending_downloads(self.db_conn, year=self.config.target_year)
+        logging.info(f"从 DuckDB 加载 {len(tasks)} 条待下载任务")
+        return tasks
+
+    def _update_task_status_in_db(
+        self,
+        stock_code: str,
+        year: int,
+        success: bool,
+        pdf_path: str | None = None,
+        txt_path: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        """更新任务状态到 DuckDB。"""
+        if self.db_conn is None:
+            return
+
+        from annual_report_mda.db import update_report_status
+
+        if success:
+            update_report_status(
+                self.db_conn,
+                stock_code=stock_code,
+                year=year,
+                download_status="success",
+                convert_status="success",
+                pdf_path=pdf_path,
+                txt_path=txt_path,
+                downloaded_at=True,
+                converted_at=True,
+            )
+        else:
+            update_report_status(
+                self.db_conn,
+                stock_code=stock_code,
+                year=year,
+                download_status="failed",
+                download_error=error,
+            )
     
     def run(self) -> bool:
         """执行批量处理流程。
@@ -651,38 +703,67 @@ class AnnualReportProcessor:
         logging.info("年报批量下载转换程序启动")
         logging.info(f"目标年份: {self.config.target_year}")
         logging.info(f"删除PDF: {self.config.delete_pdf}")
+        logging.info(f"数据源: {'DuckDB' if self.db_conn else 'Excel'}")
         logging.info("="*60)
-        
-        # 加载数据
-        df = self._load_excel_data()
-        if df is None:
-            return False
-        
+
         # 准备目录
         if not self._prepare_directories():
             return False
-        
-        # 过滤数据
-        filtered_df = self._filter_data_by_year(df)
-        if filtered_df.empty:
-            logging.warning(f"未找到 {self.config.target_year} 年的数据")
-            return True
-        
-        # 准备任务列表
-        tasks = [
-            (self.converter, row['公司代码'], row['公司简称'], row['年份'], row['年报链接'])
-            for _, row in filtered_df.iterrows()
-        ]
-        
+
+        # 根据模式加载任务
+        if self.db_conn is not None:
+            # DuckDB 模式
+            db_tasks = self._load_tasks_from_duckdb()
+            if not db_tasks:
+                logging.warning(f"未找到 {self.config.target_year} 年的待下载任务")
+                return True
+
+            # 转换为任务列表格式
+            tasks = [
+                (self.converter, task['stock_code'], task.get('short_name') or '', task['year'], task['url'])
+                for task in db_tasks
+            ]
+        else:
+            # Excel 模式
+            df = self._load_excel_data()
+            if df is None:
+                return False
+
+            filtered_df = self._filter_data_by_year(df)
+            if filtered_df.empty:
+                logging.warning(f"未找到 {self.config.target_year} 年的数据")
+                return True
+
+            tasks = [
+                (self.converter, row['公司代码'], row['公司简称'], row['年份'], row['年报链接'])
+                for _, row in filtered_df.iterrows()
+            ]
+
         # 多进程处理
         worker_count = self.config.processes or min(cpu_count(), len(tasks))
         logging.info(f"使用 {worker_count} 个进程处理 {len(tasks)} 个文件")
-        
+
         success_count = 0
         with Pool(processes=worker_count) as pool:
             results = pool.map(_process_task, tasks)
             success_count = sum(results)
-        
+
+            # DuckDB 模式下更新状态（主进程统一写入）
+            if self.db_conn is not None:
+                for task, success in zip(tasks, results):
+                    _, stock_code, short_name, year, _ = task
+                    base_name = self.converter._sanitize_filename(f"{int(stock_code):06}_{short_name}_{year}")
+                    pdf_path = os.path.join(self.config.pdf_dir, f"{base_name}.pdf")
+                    txt_path = os.path.join(self.config.txt_dir, f"{base_name}.txt")
+                    self._update_task_status_in_db(
+                        stock_code=str(stock_code).zfill(6),
+                        year=int(year),
+                        success=success,
+                        pdf_path=pdf_path if success else None,
+                        txt_path=txt_path if success else None,
+                        error=None if success else "处理失败",
+                    )
+
         # 输出统计
         logging.info("="*60)
         logging.info(f"处理完成: 成功 {success_count}/{len(tasks)}")
@@ -750,7 +831,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     download = subparsers.add_parser("download", help="从Excel读取链接，下载PDF并转换为TXT。")
-    download.add_argument("--excel-file", required=True, help="Excel路径（需包含 公司代码/公司简称/年份/年报链接 列）。")
+    download.add_argument("--excel-file", help="Excel路径（需包含 公司代码/公司简称/年份/年报链接 列）。使用 --source excel 时必填。")
     download.add_argument("--delete-pdf", action="store_true", help="转换后删除PDF（节省空间）。")
     download.add_argument("--max-retries", type=int, default=3, help="下载失败最大重试次数（默认 3）。")
     download.add_argument("--timeout", type=int, default=15, help="HTTP超时秒数（默认 15）。")
@@ -770,6 +851,22 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--txt-dir-template",
         default="outputs/annual_reports/{year}/txt",
         help="TXT输出目录模板（默认 outputs/annual_reports/{year}/txt）。",
+    )
+    download.add_argument(
+        "--source",
+        choices=["excel", "duckdb"],
+        default="excel",
+        help="任务数据源：excel（默认）从Excel读取，duckdb 从数据库读取待下载任务。",
+    )
+    download.add_argument(
+        "--db-path",
+        default="data/annual_reports.duckdb",
+        help="DuckDB 数据库路径（仅当 --source duckdb 时使用，默认 data/annual_reports.duckdb）。",
+    )
+    download.add_argument(
+        "--legacy",
+        action="store_true",
+        help="兼容模式：强制使用 Excel 数据源（等效 --source excel）。",
     )
 
     convert_only = subparsers.add_parser("convert-only", help="对本地PDF目录执行批量转换，无需Excel。")
@@ -796,9 +893,22 @@ def _run_download_from_args(args: argparse.Namespace) -> None:
     else:
         years = [args.year]
 
+    # 确定数据源：--legacy 强制使用 Excel
+    use_duckdb = (args.source == "duckdb") and (not args.legacy)
+    db_conn = None
+
+    # 验证参数
+    if not use_duckdb and not args.excel_file:
+        raise SystemExit("使用 Excel 数据源时必须指定 --excel-file 参数")
+
+    if use_duckdb:
+        from annual_report_mda.db import init_db
+        db_conn = init_db(args.db_path)
+        logging.info(f"使用 DuckDB 数据源: {args.db_path}")
+
     for year in years:
         config = ConverterConfig(
-            excel_file=args.excel_file,
+            excel_file=args.excel_file if not use_duckdb else "",
             pdf_dir=args.pdf_dir_template.format(year=year),
             txt_dir=args.txt_dir_template.format(year=year),
             target_year=year,
@@ -807,11 +917,14 @@ def _run_download_from_args(args: argparse.Namespace) -> None:
             timeout=args.timeout,
             processes=args.processes,
         )
-        processor = AnnualReportProcessor(config)
+        processor = AnnualReportProcessor(config, db_conn=db_conn)
         ok = processor.run()
         if not ok:
             raise SystemExit(1)
         logging.info(f"{year}年年报处理完毕")
+
+    if db_conn is not None:
+        db_conn.close()
 
 
 def _run_convert_only_from_args(args: argparse.Namespace) -> None:
@@ -865,13 +978,23 @@ def _run_with_yaml_config(args: argparse.Namespace) -> None:
     downloader_cfg = config.downloader
     crawler_cfg = config.crawler
 
+    # 确定数据源模式
+    use_duckdb = getattr(crawler_cfg, "output_mode", "excel") == "duckdb"
+    db_conn = None
+
+    if use_duckdb:
+        from annual_report_mda.db import init_db
+        db_path = config.project.db_path or "data/annual_reports.duckdb"
+        db_conn = init_db(db_path)
+        logging.info(f"使用 DuckDB 数据源: {db_path}")
+
     for year in crawler_cfg.target_years:
         excel_path = downloader_cfg.paths.input_excel_template.replace("{year}", str(year))
         pdf_dir = downloader_cfg.paths.pdf_dir_template.replace("{year}", str(year))
         txt_dir = downloader_cfg.paths.txt_dir_template.replace("{year}", str(year))
 
         legacy_config = ConverterConfig(
-            excel_file=excel_path,
+            excel_file=excel_path if not use_duckdb else "",
             pdf_dir=pdf_dir,
             txt_dir=txt_dir,
             target_year=year,
@@ -882,11 +1005,14 @@ def _run_with_yaml_config(args: argparse.Namespace) -> None:
             processes=downloader_cfg.processes,
         )
 
-        processor = AnnualReportProcessor(legacy_config)
+        processor = AnnualReportProcessor(legacy_config, db_conn=db_conn)
         ok = processor.run()
         if not ok:
             raise SystemExit(1)
         logging.info(f"{year}年年报处理完毕")
+
+    if db_conn is not None:
+        db_conn.close()
 
 
 def _run_with_embedded_config() -> None:

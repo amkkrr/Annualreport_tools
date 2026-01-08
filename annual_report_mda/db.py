@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Union
 
@@ -23,6 +24,68 @@ def init_db(db_path: Union[str, Path]) -> "duckdb.DuckDBPyConnection":
 
 
 def _create_tables(conn: "duckdb.DuckDBPyConnection") -> None:
+    # === 公司基本信息表 ===
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS companies (
+            stock_code VARCHAR PRIMARY KEY,
+            short_name VARCHAR NOT NULL,
+            full_name VARCHAR,
+            plate VARCHAR,
+            trade VARCHAR,
+            trade_name VARCHAR,
+            first_seen_at TIMESTAMP,
+            updated_at TIMESTAMP
+        );
+        """
+    )
+
+    # === 年报元数据与生命周期管理表 ===
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reports (
+            stock_code VARCHAR NOT NULL,
+            year INTEGER NOT NULL,
+            announcement_id VARCHAR,
+            title VARCHAR,
+            url VARCHAR NOT NULL,
+            publish_date DATE,
+
+            download_status VARCHAR DEFAULT 'pending',
+            convert_status VARCHAR DEFAULT 'pending',
+            extract_status VARCHAR DEFAULT 'pending',
+
+            download_error VARCHAR,
+            convert_error VARCHAR,
+            extract_error VARCHAR,
+            download_retries INTEGER DEFAULT 0,
+            convert_retries INTEGER DEFAULT 0,
+
+            pdf_path VARCHAR,
+            txt_path VARCHAR,
+            pdf_size_bytes BIGINT,
+            pdf_sha256 VARCHAR,
+            txt_sha256 VARCHAR,
+
+            crawled_at TIMESTAMP,
+            downloaded_at TIMESTAMP,
+            converted_at TIMESTAMP,
+            updated_at TIMESTAMP,
+
+            source VARCHAR DEFAULT 'cninfo',
+
+            PRIMARY KEY (stock_code, year)
+        );
+        """
+    )
+
+    # === 索引 ===
+    # 注意: DuckDB 对带索引列的 UPDATE 操作有已知限制
+    # 可能导致 "Duplicate key violates primary key constraint" 错误
+    # 因此这里不创建状态列索引，依靠 DuckDB 的优化器进行查询优化
+    # 参考: https://duckdb.org/docs/sql/indexes
+
+    # === MDA 提取结果表 ===
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS mda_text (
@@ -97,6 +160,7 @@ def _create_tables(conn: "duckdb.DuckDBPyConnection") -> None:
 
 
 def _create_views(conn: "duckdb.DuckDBPyConnection") -> None:
+    # === MDA 最新记录视图 ===
     conn.execute(
         """
         CREATE OR REPLACE VIEW mda_text_latest AS
@@ -111,6 +175,46 @@ def _create_views(conn: "duckdb.DuckDBPyConnection") -> None:
             FROM mda_text
         ) t
         WHERE rn = 1;
+        """
+    )
+
+    # === 年报处理进度总览视图 ===
+    conn.execute(
+        """
+        CREATE OR REPLACE VIEW reports_progress AS
+        SELECT
+            year,
+            COUNT(*) as total,
+            SUM(CASE WHEN download_status = 'success' THEN 1 ELSE 0 END) as downloaded,
+            SUM(CASE WHEN convert_status = 'success' THEN 1 ELSE 0 END) as converted,
+            SUM(CASE WHEN extract_status = 'success' THEN 1 ELSE 0 END) as extracted
+        FROM reports
+        GROUP BY year
+        ORDER BY year DESC;
+        """
+    )
+
+    # === 待下载任务视图 ===
+    conn.execute(
+        """
+        CREATE OR REPLACE VIEW pending_downloads AS
+        SELECT r.stock_code, c.short_name, r.year, r.url
+        FROM reports r
+        LEFT JOIN companies c ON r.stock_code = c.stock_code
+        WHERE r.download_status = 'pending'
+        ORDER BY r.year DESC, r.stock_code;
+        """
+    )
+
+    # === 待转换任务视图 ===
+    conn.execute(
+        """
+        CREATE OR REPLACE VIEW pending_converts AS
+        SELECT r.stock_code, c.short_name, r.year, r.pdf_path
+        FROM reports r
+        LEFT JOIN companies c ON r.stock_code = c.stock_code
+        WHERE r.download_status = 'success' AND r.convert_status = 'pending'
+        ORDER BY r.year DESC, r.stock_code;
         """
     )
 
@@ -157,3 +261,251 @@ def insert_extraction_error(
             utc_now(),
         ),
     )
+
+
+# =============================================================================
+# companies 表操作
+# =============================================================================
+
+
+def upsert_company(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    stock_code: str,
+    short_name: str,
+    full_name: str | None = None,
+    plate: str | None = None,
+    trade: str | None = None,
+    trade_name: str | None = None,
+) -> None:
+    """插入或更新公司信息。"""
+    now = utc_now()
+    conn.execute(
+        """
+        INSERT INTO companies (stock_code, short_name, full_name, plate, trade, trade_name, first_seen_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (stock_code) DO UPDATE SET
+            short_name = EXCLUDED.short_name,
+            full_name = COALESCE(EXCLUDED.full_name, companies.full_name),
+            plate = COALESCE(EXCLUDED.plate, companies.plate),
+            trade = COALESCE(EXCLUDED.trade, companies.trade),
+            trade_name = COALESCE(EXCLUDED.trade_name, companies.trade_name),
+            updated_at = EXCLUDED.updated_at;
+        """,
+        (stock_code, short_name, full_name, plate, trade, trade_name, now, now),
+    )
+
+
+def get_company(
+    conn: "duckdb.DuckDBPyConnection",
+    stock_code: str,
+) -> dict | None:
+    """获取公司信息。"""
+    result = conn.execute(
+        "SELECT * FROM companies WHERE stock_code = ?",
+        (stock_code,),
+    ).fetchone()
+    if result is None:
+        return None
+    columns = [desc[0] for desc in conn.description]
+    return dict(zip(columns, result))
+
+
+# =============================================================================
+# reports 表操作
+# =============================================================================
+
+
+def insert_report(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    stock_code: str,
+    year: int,
+    url: str,
+    title: str | None = None,
+    announcement_id: str | None = None,
+    publish_date: date | None = None,
+    source: str = "cninfo",
+) -> bool:
+    """插入年报记录（增量模式，已存在则跳过）。返回是否新增。"""
+    # 先检查是否已存在
+    existing = conn.execute(
+        "SELECT 1 FROM reports WHERE stock_code = ? AND year = ?",
+        (stock_code, year),
+    ).fetchone()
+    if existing is not None:
+        return False
+
+    now = utc_now()
+    conn.execute(
+        """
+        INSERT INTO reports (stock_code, year, url, title, announcement_id, publish_date, source, crawled_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """,
+        (stock_code, year, url, title, announcement_id, publish_date, source, now, now),
+    )
+    return True
+
+
+def update_report_status(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    stock_code: str,
+    year: int,
+    download_status: str | None = None,
+    convert_status: str | None = None,
+    extract_status: str | None = None,
+    pdf_path: str | None = None,
+    txt_path: str | None = None,
+    pdf_size_bytes: int | None = None,
+    pdf_sha256: str | None = None,
+    txt_sha256: str | None = None,
+    download_error: str | None = None,
+    convert_error: str | None = None,
+    extract_error: str | None = None,
+    downloaded_at: bool = False,
+    converted_at: bool = False,
+) -> None:
+    """更新年报处理状态。动态构建 SET 子句，仅更新非 None 字段。"""
+    updates = []
+    params = []
+
+    if download_status is not None:
+        updates.append("download_status = ?")
+        params.append(download_status)
+    if convert_status is not None:
+        updates.append("convert_status = ?")
+        params.append(convert_status)
+    if extract_status is not None:
+        updates.append("extract_status = ?")
+        params.append(extract_status)
+    if pdf_path is not None:
+        updates.append("pdf_path = ?")
+        params.append(pdf_path)
+    if txt_path is not None:
+        updates.append("txt_path = ?")
+        params.append(txt_path)
+    if pdf_size_bytes is not None:
+        updates.append("pdf_size_bytes = ?")
+        params.append(pdf_size_bytes)
+    if pdf_sha256 is not None:
+        updates.append("pdf_sha256 = ?")
+        params.append(pdf_sha256)
+    if txt_sha256 is not None:
+        updates.append("txt_sha256 = ?")
+        params.append(txt_sha256)
+    if download_error is not None:
+        updates.append("download_error = ?")
+        params.append(download_error)
+    if convert_error is not None:
+        updates.append("convert_error = ?")
+        params.append(convert_error)
+    if extract_error is not None:
+        updates.append("extract_error = ?")
+        params.append(extract_error)
+    if downloaded_at:
+        updates.append("downloaded_at = ?")
+        params.append(utc_now())
+    if converted_at:
+        updates.append("converted_at = ?")
+        params.append(utc_now())
+
+    if not updates:
+        return
+
+    updates.append("updated_at = ?")
+    params.append(utc_now())
+
+    params.extend([stock_code, year])
+
+    sql = f"UPDATE reports SET {', '.join(updates)} WHERE stock_code = ? AND year = ?"
+    conn.execute(sql, params)
+
+
+def get_pending_downloads(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    year: int | None = None,
+    limit: int | None = None,
+) -> list[dict]:
+    """获取待下载任务列表。"""
+    sql = """
+        SELECT r.stock_code, c.short_name, r.year, r.url, r.title
+        FROM reports r
+        LEFT JOIN companies c ON r.stock_code = c.stock_code
+        WHERE r.download_status = 'pending'
+    """
+    params = []
+
+    if year is not None:
+        sql += " AND r.year = ?"
+        params.append(year)
+
+    sql += " ORDER BY r.year DESC, r.stock_code"
+
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+
+    result = conn.execute(sql, params).fetchall()
+    columns = [desc[0] for desc in conn.description]
+    return [dict(zip(columns, row)) for row in result]
+
+
+def get_pending_converts(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    year: int | None = None,
+    limit: int | None = None,
+) -> list[dict]:
+    """获取待转换任务列表。"""
+    sql = """
+        SELECT r.stock_code, c.short_name, r.year, r.pdf_path, r.url
+        FROM reports r
+        LEFT JOIN companies c ON r.stock_code = c.stock_code
+        WHERE r.download_status = 'success' AND r.convert_status = 'pending'
+    """
+    params = []
+
+    if year is not None:
+        sql += " AND r.year = ?"
+        params.append(year)
+
+    sql += " ORDER BY r.year DESC, r.stock_code"
+
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+
+    result = conn.execute(sql, params).fetchall()
+    columns = [desc[0] for desc in conn.description]
+    return [dict(zip(columns, row)) for row in result]
+
+
+def report_exists(
+    conn: "duckdb.DuckDBPyConnection",
+    stock_code: str,
+    year: int,
+) -> bool:
+    """检查年报记录是否存在。"""
+    result = conn.execute(
+        "SELECT 1 FROM reports WHERE stock_code = ? AND year = ?",
+        (stock_code, year),
+    ).fetchone()
+    return result is not None
+
+
+def get_report(
+    conn: "duckdb.DuckDBPyConnection",
+    stock_code: str,
+    year: int,
+) -> dict | None:
+    """获取年报记录。"""
+    result = conn.execute(
+        "SELECT * FROM reports WHERE stock_code = ? AND year = ?",
+        (stock_code, year),
+    ).fetchone()
+    if result is None:
+        return None
+    columns = [desc[0] for desc in conn.description]
+    return dict(zip(columns, result))

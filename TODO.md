@@ -26,16 +26,16 @@
 
 ### 1.2 DuckDB 核心化（替代 Excel）
 
-- [ ] `P0` 扩展 `annual_report_mda/db.py`，新增全生命周期管理表：
+- [x] `P0` 扩展 `annual_report_mda/db.py`，新增全生命周期管理表：（完成于 2026-01-08）
     - `reports`: 存储元数据（URL、发布日期）、下载状态、转换状态、本地路径
     - `companies`: 存储公司基本信息
-- [ ] `P1` 改造 `1.report_link_crawler.py`：爬取结果直接写入 `reports` 表（支持增量）
-- [ ] `P1` 改造 `2.pdf_batch_converter.py`：从 `reports` 表读取待处理任务，完成后更新状态
+- [x] `P1` 改造 `1.report_link_crawler.py`：爬取结果直接写入 `reports` 表（支持增量）（完成于 2026-01-08）
+- [x] `P1` 改造 `2.pdf_batch_converter.py`：从 `reports` 表读取待处理任务，完成后更新状态（完成于 2026-01-08）
 
 ### 1.3 迁移与兼容
 
-- [ ] `P0` 编写一次性迁移脚本：`res/AnnualReport_links_2004_2023.xlsx` → DuckDB
-- [ ] `P1` 保留 Excel 读取兼容层，支持 `--legacy` 模式，便于回滚
+- [x] `P0` 编写一次性迁移脚本：`res/AnnualReport_links_2004_2023.xlsx` → DuckDB（完成于 2026-01-08）
+- [x] `P1` 保留 Excel 读取兼容层，支持 `--legacy` 模式，便于回滚（完成于 2026-01-08）
 
 ### 📍 里程碑 M1: 配置统一 + DuckDB 写入跑通
 

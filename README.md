@@ -59,11 +59,12 @@
 
 | 脚本/资源                                 | 说明                                      |
 | ----------------------------------------- | ----------------------------------------- |
-| `1.report_link_crawler.py`                | 带板块/行业过滤器和重试逻辑的巨潮资讯爬虫 |
-| `2.pdf_batch_converter.py`                | 批量下载 + pdfplumber转换，带文件验证     |
+| `1.report_link_crawler.py`                | 带板块/行业过滤器和重试逻辑的巨潮资讯爬虫，支持 DuckDB/Excel 双模式 |
+| `2.pdf_batch_converter.py`                | 批量下载 + pdfplumber转换，带文件验证，支持 DuckDB 任务队列     |
 | `3.text_analysis.py`                      | 多进程关键词分析，Excel导出               |
 | `text_analysis_universal.py`              | 适用于任意TXT文件夹的轻量级分析器         |
 | `mda_extractor.py`                        | MD&A 章节提取器，支持批量处理与增量模式   |
+| `scripts/migrate_excel_to_duckdb.py`      | Excel → DuckDB 数据迁移脚本               |
 | `./res/AnnualReport_links_2004_2023.xlsx` | 涵盖2004-2023年的精选主表                 |
 
 ## 脚本索引（旧版编号）
@@ -161,6 +162,7 @@ pip install -r requirements.txt
 
 | 日期       | 亮点                                                          |
 | ---------- | ------------------------------------------------------------- |
+| 2026/01/08 | **DuckDB 核心化 (M1.2) 完成**：爬虫/转换器支持双模式，新增迁移脚本和单元测试 |
 | 2026/01/08 | 文档同步：补充 MD&A 规格书索引，完善注册表子模块列表          |
 | 2026/01/07 | 新增统一配置管理 (config_manager)，支持 YAML + Pydantic 验证  |
 | 2026/01/07 | 新增 M2.5 里程碑（MD&A 提取器测试与质检），扩充技术文档索引   |
@@ -182,7 +184,7 @@ pip install -r requirements.txt
 
 > 详细开发计划与验收标准请参阅 [TODO.md](./TODO.md)
 
-- [ ] **M1 配置统一 + DuckDB 底座** — 统一配置管理，DuckDB 替代 Excel 作为数据枢纽
+- [x] **M1 配置统一 + DuckDB 底座** — 统一配置管理，DuckDB 替代 Excel 作为数据枢纽（完成于 2026-01-08）
 - [ ] **M2 结构化提取 + 质量评估** — 提升 MD&A 提取准确率，建立质量评分闭环
 - [ ] **M2.5 MD&A 提取器测试与质检** — 端到端测试、质检增强、文档完善
 - [ ] **M3 NLP 深度分析** — 情感分析、相似度分析、LDA 主题模型
