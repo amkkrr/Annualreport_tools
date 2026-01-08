@@ -154,12 +154,14 @@ pip install -r requirements.txt
 - **[文本分析评审](./docs/text_analysis_review.md)**：文本分析模块的代码评审报告。
 
 ### 规格与审计
+- **[MD&A 提取器规格书](./docs/annual_report_mda_extractor_spec.md)**：MD&A 提取器的完整技术规格。
 - **[MD&A 提取器规格审计](./docs/annual_report_mda_extractor_spec_audit.md)**：MD&A 提取器规格书的审计报告。
 
 ## 更新日志
 
 | 日期       | 亮点                                                          |
 | ---------- | ------------------------------------------------------------- |
+| 2026/01/08 | 文档同步：补充 MD&A 规格书索引，完善注册表子模块列表          |
 | 2026/01/07 | 新增统一配置管理 (config_manager)，支持 YAML + Pydantic 验证  |
 | 2026/01/07 | 新增 M2.5 里程碑（MD&A 提取器测试与质检），扩充技术文档索引   |
 | 2026/01/07 | 添加 MD&A 提取器使用说明、数据库 schema.json                  |
