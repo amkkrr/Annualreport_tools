@@ -13,6 +13,10 @@ MAX_CHARS_DEFAULT = 120_000
 
 _TOC_DOTLINE_RE = re.compile(r"[.…\.·]{2,}\s*\d+\s*$")
 _HEADING_MAX_LEN = 60
+# 引用词：如果行包含这些词，则不是真正的章节标题
+_REFERENCE_WORDS = ("参见", "详见", "见本", "请参阅", "详情请见", "参考", "参阅")
+# 章节级标题模式：匹配 "第X节" 格式，应优先于普通标题
+_SECTION_LEVEL_RE = re.compile(r"^第[一二三四五六七八九十百零\d]+[章节部分]")
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,9 @@ def _looks_like_heading(line: str) -> bool:
         return False
     if re.fullmatch(r"\d+", s):
         return False
+    # 排除包含引用词的行（这些是对章节的引用，不是章节标题本身）
+    if any(ref in s for ref in _REFERENCE_WORDS):
+        return False
     return True
 
 
@@ -124,7 +131,17 @@ def _find_end_hits(
             if not _looks_like_heading(line):
                 continue
             if end_title_re.search(line):
-                hits.append((page_index, line_index, line.strip()))
+                # 额外检查：结束标记应该在行首或是章节级标题格式
+                stripped = line.strip()
+                # 如果是 "第X节" 格式，接受
+                if _SECTION_LEVEL_RE.match(stripped):
+                    hits.append((page_index, line_index, stripped))
+                    continue
+                # 检查结束标记是否在行首
+                for title in end_titles:
+                    if stripped.startswith(title):
+                        hits.append((page_index, line_index, stripped))
+                        break
     return hits
 
 
@@ -405,6 +422,9 @@ def extract_mda_from_pages(
             end_line_index=None,
         )
         score, _ = calculate_mda_score(snippet_text)
+        # 给章节级标题（如"第四节"）加权，优先选择章节级别的标题
+        if _SECTION_LEVEL_RE.match(line_text.strip()):
+            score += 0.5
         if score > best_anchor_score:
             best_anchor_score = score
             best_start = (page_index, line_index, line_text)

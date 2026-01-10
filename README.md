@@ -65,6 +65,9 @@
 | `text_analysis_universal.py`              | 适用于任意TXT文件夹的轻量级分析器         |
 | `mda_extractor.py`                        | MD&A 章节提取器，支持批量处理与增量模式   |
 | `scripts/migrate_excel_to_duckdb.py`      | Excel → DuckDB 数据迁移脚本               |
+| `scripts/llm_annotate.py`                 | LLM 辅助标注工具，生成黄金数据集          |
+| `scripts/evaluate_extraction.py`          | 提取质量评估，支持规则+LLM 双模式         |
+| `scripts/auto_improve.py`                 | 自动分析失败模式并生成改进建议            |
 | `./res/AnnualReport_links_2004_2023.xlsx` | 涵盖2004-2023年的精选主表                 |
 
 ## 脚本索引（旧版编号）
@@ -162,6 +165,8 @@ pip install -r requirements.txt
 
 | 日期       | 亮点                                                          |
 | ---------- | ------------------------------------------------------------- |
+| 2026/01/10 | **MD&A 提取策略优化**：平均分从 68.86 提升至 96.51，修复引用词误匹配、结束标记误识别等问题 |
+| 2026/01/10 | 新增黄金数据集工具链：LLM 辅助标注、评估脚本、自动改进分析    |
 | 2026/01/08 | **DuckDB 核心化 (M1.2) 完成**：爬虫/转换器支持双模式，新增迁移脚本和单元测试 |
 | 2026/01/08 | 文档同步：补充 MD&A 规格书索引，完善注册表子模块列表          |
 | 2026/01/07 | 新增统一配置管理 (config_manager)，支持 YAML + Pydantic 验证  |

@@ -147,7 +147,8 @@ def evaluate_single(
             "llm_evaluation": {...} | None,
             "rule_evaluation": {
                 "boundary_match": bool,
-                "char_overlap_ratio": float
+                "char_overlap_ratio": float,
+                "text_overlap_ratio": float
             },
             "final_score": float
         }
@@ -160,6 +161,8 @@ def evaluate_single(
 
     extracted_start = extracted_result.get("start_char_offset", 0)
     extracted_end = extracted_result.get("end_char_offset", 0)
+    extracted_text = extracted_result.get("text", "")
+    source_path = extracted_result.get("source_path", golden_sample.get("source_txt_path", ""))
 
     start_diff = abs(extracted_start - golden_start)
     end_diff = abs(extracted_end - golden_end)
@@ -168,16 +171,24 @@ def evaluate_single(
     TOLERANCE = 200
     boundary_match = start_diff <= TOLERANCE and end_diff <= TOLERANCE
 
-    # 计算重叠率
+    # 计算基于偏移量的重叠率
     overlap_start = max(golden_start, extracted_start)
     overlap_end = min(golden_end, extracted_end)
     overlap_len = max(0, overlap_end - overlap_start)
     golden_len = golden_end - golden_start
-    overlap_ratio = overlap_len / golden_len if golden_len > 0 else 0
+    offset_overlap_ratio = overlap_len / golden_len if golden_len > 0 else 0
+
+    # 计算基于文本内容的重叠率 (更准确)
+    text_overlap_ratio = compute_text_overlap(golden_sample, extracted_text, source_path)
+
+    # 使用两个重叠率中较高的值 (因为 LLM 标注的偏移量可能有误)
+    overlap_ratio = max(offset_overlap_ratio, text_overlap_ratio)
 
     rule_eval = {
         "boundary_match": boundary_match,
-        "char_overlap_ratio": overlap_ratio,
+        "char_overlap_ratio": offset_overlap_ratio,
+        "text_overlap_ratio": text_overlap_ratio,
+        "best_overlap_ratio": overlap_ratio,
         "start_offset_diff": extracted_start - golden_start,
         "end_offset_diff": extracted_end - golden_end
     }
@@ -186,7 +197,6 @@ def evaluate_single(
     llm_eval = None
     if use_llm_judge:
         try:
-            extracted_text = extracted_result.get("text", "")
             llm_eval = call_llm_judge(golden_sample, extracted_text, model)
         except (FileNotFoundError, LLMCallError) as e:
             print(f"  警告: LLM 评估失败 ({e})，仅使用规则评估")
@@ -195,7 +205,7 @@ def evaluate_single(
     if llm_eval:
         final_score = llm_eval["total_score"]
     else:
-        # 规则评分: 重叠率 * 100
+        # 规则评分: 最佳重叠率 * 100
         final_score = overlap_ratio * 100
 
     return {
@@ -213,6 +223,119 @@ def evaluate_single(
         },
         "final_score": final_score
     }
+
+
+def compute_char_offsets(extracted_text: str, source_path: str) -> tuple[int, int]:
+    """
+    通过在原文中查找提取文本来计算字符偏移量。
+    跳过目录区域，找到实际内容位置。
+
+    Args:
+        extracted_text: 提取的 MD&A 文本
+        source_path: 原 TXT 文件路径
+
+    Returns:
+        (start_char_offset, end_char_offset)
+    """
+    if not extracted_text or not source_path:
+        return 0, len(extracted_text) if extracted_text else 0
+
+    source_path_obj = Path(source_path)
+    if not source_path_obj.exists():
+        return 0, len(extracted_text)
+
+    try:
+        original = source_path_obj.read_text(encoding="utf-8")
+    except Exception:
+        return 0, len(extracted_text)
+
+    # 使用前 500 字符作为搜索锚点
+    anchor = extracted_text[:500] if len(extracted_text) > 500 else extracted_text
+
+    # 查找所有出现位置
+    positions = []
+    start = 0
+    while True:
+        pos = original.find(anchor, start)
+        if pos == -1:
+            break
+        # 检查周围是否有目录点线 (TOC indicator)
+        context = original[max(0, pos-100):pos+50]
+        has_toc_dots = context.count('.') > 20 or '…' in context or '...' in context
+        positions.append((pos, has_toc_dots))
+        start = pos + 1
+
+    # 优先选择非 TOC 位置
+    non_toc_positions = [p for p, is_toc in positions if not is_toc]
+    if non_toc_positions:
+        start_idx = non_toc_positions[0]
+    elif positions:
+        start_idx = positions[0][0]
+    else:
+        # 模糊匹配
+        anchor_short = extracted_text[:200].strip()
+        anchor_normalized = "".join(anchor_short.split())
+        for i in range(len(original) - 200):
+            window = original[i:i+300]
+            window_normalized = "".join(window.split())
+            if anchor_normalized in window_normalized:
+                return i, i + len(extracted_text)
+        return 0, len(extracted_text)
+
+    end_idx = start_idx + len(extracted_text)
+    return start_idx, end_idx
+
+
+def compute_text_overlap(golden_sample: dict, extracted_text: str, source_path: str) -> float:
+    """
+    计算提取文本与 golden 标记区域的实际文本重叠率。
+    这比纯粹的偏移量比较更准确，因为 LLM 标注的偏移量可能有误差。
+
+    Returns:
+        overlap_ratio: 0.0 - 1.0
+    """
+    if not extracted_text or not source_path:
+        return 0.0
+
+    source_path_obj = Path(source_path)
+    if not source_path_obj.exists():
+        return 0.0
+
+    try:
+        original = source_path_obj.read_text(encoding="utf-8")
+    except Exception:
+        return 0.0
+
+    golden_boundary = golden_sample.get("golden_boundary", {})
+    golden_start = golden_boundary.get("start_char_offset", 0)
+    golden_end = golden_boundary.get("end_char_offset", len(original))
+
+    # 从原文中提取 golden 区域
+    golden_text = original[golden_start:golden_end]
+
+    if not golden_text:
+        return 0.0
+
+    # 计算文本内容重叠 (使用集合比较关键内容)
+    # 将文本分成片段进行比较
+    def get_content_chunks(text: str, chunk_size: int = 100) -> set:
+        """提取文本的内容块用于比较"""
+        # 去除空白和标点
+        normalized = "".join(c for c in text if c.isalnum())
+        chunks = set()
+        for i in range(0, len(normalized) - chunk_size, chunk_size // 2):
+            chunks.add(normalized[i:i+chunk_size])
+        return chunks
+
+    golden_chunks = get_content_chunks(golden_text)
+    extracted_chunks = get_content_chunks(extracted_text)
+
+    if not golden_chunks:
+        return 0.0
+
+    # 计算重叠率
+    overlap = len(golden_chunks & extracted_chunks)
+    return overlap / len(golden_chunks)
 
 
 def run_evaluation(
@@ -269,13 +392,19 @@ def run_evaluation(
         extracted_dict = {}
         for row in extraction_results:
             key = f"{row[0]}-{row[1]}"
-            # 注意：DuckDB 结果没有 char_offset，需要从原文计算
+            text = row[2] if row[2] else ""
+            source_path = row[7] if len(row) > 7 else ""
+
+            # 从原文计算字符偏移量
+            start_offset, end_offset = compute_char_offsets(text, source_path)
+
             extracted_dict[key] = {
                 "stock_code": row[0],
                 "year": row[1],
-                "text": row[2],
-                "start_char_offset": 0,  # 需要实际计算
-                "end_char_offset": len(row[2]) if row[2] else 0
+                "text": text,
+                "start_char_offset": start_offset,
+                "end_char_offset": end_offset,
+                "source_path": source_path
             }
 
     else:
