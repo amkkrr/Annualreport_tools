@@ -110,11 +110,18 @@ def _create_tables(conn: "duckdb.DuckDBPyConnection") -> None:
             quality_flags JSON,
             quality_detail JSON,
 
+            quality_score INTEGER,
+            needs_review BOOLEAN DEFAULT FALSE,
+
             source_path VARCHAR,
             source_sha256 VARCHAR,
             extractor_version VARCHAR,
             extracted_at TIMESTAMP,
             used_rule_type VARCHAR,
+
+            mda_review TEXT,
+            mda_outlook TEXT,
+            outlook_split_position INTEGER,
 
             PRIMARY KEY (stock_code, year, source_sha256)
         );
@@ -215,6 +222,24 @@ def _create_views(conn: "duckdb.DuckDBPyConnection") -> None:
         LEFT JOIN companies c ON r.stock_code = c.stock_code
         WHERE r.download_status = 'success' AND r.convert_status = 'pending'
         ORDER BY r.year DESC, r.stock_code;
+        """
+    )
+
+    # === 待审核 MDA 视图 ===
+    conn.execute(
+        """
+        CREATE OR REPLACE VIEW mda_needs_review AS
+        SELECT
+            stock_code,
+            year,
+            quality_score,
+            quality_flags,
+            char_count,
+            source_path,
+            extracted_at
+        FROM mda_text
+        WHERE needs_review = true
+        ORDER BY quality_score ASC, extracted_at DESC;
         """
     )
 

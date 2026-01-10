@@ -11,6 +11,7 @@ from typing import Any, Iterable, Optional
 from annual_report_mda import EXTRACTOR_VERSION
 from annual_report_mda.data_manager import MDAUpsertRecord, compute_file_sha256, should_skip_incremental, upsert_mda_text
 from annual_report_mda.db import init_db, insert_extraction_error
+from annual_report_mda.scorer import calculate_quality_score
 from annual_report_mda.strategies import MAX_CHARS_DEFAULT, MAX_PAGES_DEFAULT, extract_mda_iterative
 from annual_report_mda.text_loader import load_pages
 from annual_report_mda.utils import configure_logging, load_dotenv_if_present
@@ -104,6 +105,12 @@ def _extract_one_worker(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     if extracted is None:
+        # 提取失败，质量评分为 0，需要审核
+        quality_result = calculate_quality_score(
+            text="",
+            quality_flags=["FLAG_EXTRACT_FAILED"],
+            score_detail=None,
+        )
         record = MDAUpsertRecord(
             stock_code=stock_code,
             year=year,
@@ -127,8 +134,17 @@ def _extract_one_worker(payload: dict[str, Any]) -> dict[str, Any]:
             source_sha256=source_sha256,
             extractor_version=EXTRACTOR_VERSION,
             used_rule_type=None,
+            quality_score=quality_result.score,
+            needs_review=quality_result.needs_review,
         )
         return {"ok": True, "record": asdict(record)}
+
+    # 计算综合质量评分
+    quality_result = calculate_quality_score(
+        text=extracted.mda_raw,
+        quality_flags=extracted.quality_flags,
+        score_detail=extracted.score_detail,
+    )
 
     record = MDAUpsertRecord(
         stock_code=stock_code,
@@ -149,11 +165,14 @@ def _extract_one_worker(payload: dict[str, Any]) -> dict[str, Any]:
             **extracted.quality_detail,
             "encoding_used": load_result.encoding_used,
             "score_detail": asdict(extracted.score_detail),
+            "quality_penalties": quality_result.penalties,
         },
         source_path=str(path),
         source_sha256=source_sha256,
         extractor_version=EXTRACTOR_VERSION,
         used_rule_type=extracted.used_rule_type,
+        quality_score=quality_result.score,
+        needs_review=quality_result.needs_review,
     )
     return {"ok": True, "record": asdict(record)}
 

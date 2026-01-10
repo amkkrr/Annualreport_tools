@@ -248,16 +248,73 @@ class PDFConverter:
 
 
 @dataclass(frozen=True)
+class PDFOutlineEntry:
+    """PDF 书签条目。"""
+
+    title: str
+    page_number: Optional[int]
+    level: int  # 层级深度 (0 为顶级)
+
+
+@dataclass(frozen=True)
 class PDFConversionResult:
     """单个PDF->TXT转换的结果。"""
 
     success: bool
     backend: Optional[str] = None
     error: Optional[str] = None
+    outlines: Optional[list[PDFOutlineEntry]] = None
 
 
 class PDFToTextConverter:
     """纯PDF->TXT转换器（不包含下载逻辑）。"""
+
+    def _extract_outlines_pypdf2(self, pdf_path: Path) -> Optional[list[PDFOutlineEntry]]:
+        """从 PDF 提取书签（使用 PyPDF2）。"""
+        try:
+            PyPDF2 = _import_or_raise("PyPDF2", "pip install PyPDF2")
+            PdfReader = PyPDF2.PdfReader
+        except ModuleNotFoundError:
+            return None
+
+        try:
+            reader = PdfReader(str(pdf_path))
+            outline = getattr(reader, "outline", None) or getattr(reader, "outlines", None)
+            if not outline:
+                return None
+
+            entries: list[PDFOutlineEntry] = []
+
+            def _traverse_outline(items: list, level: int = 0) -> None:
+                for item in items:
+                    if isinstance(item, list):
+                        # 嵌套的书签列表
+                        _traverse_outline(item, level + 1)
+                    else:
+                        # 书签条目
+                        title = getattr(item, "title", None) or str(item.get("/Title", ""))
+                        page_num: Optional[int] = None
+                        try:
+                            # 尝试获取页码
+                            if hasattr(item, "page"):
+                                page_obj = item.page
+                                if page_obj is not None:
+                                    page_num = reader.get_page_number(page_obj)
+                        except Exception:
+                            pass
+                        if title:
+                            entries.append(PDFOutlineEntry(
+                                title=title.strip(),
+                                page_number=page_num,
+                                level=level,
+                            ))
+
+            _traverse_outline(outline)
+            return entries if entries else None
+
+        except Exception as e:
+            logging.debug(f"提取 PDF 书签失败: {pdf_path} - {e}")
+            return None
 
     def _convert_with_pdfplumber(self, pdf_path: Path, txt_path: Path) -> PDFConversionResult:
         try:
@@ -319,6 +376,9 @@ class PDFToTextConverter:
         txt_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = txt_path.with_name(f"{txt_path.name}.{os.getpid()}.tmp")
 
+        # 提前提取书签（转换成功后附加到结果中）
+        outlines = self._extract_outlines_pypdf2(pdf_path)
+
         def _cleanup_tmp() -> None:
             try:
                 if tmp_path.exists():
@@ -332,7 +392,13 @@ class PDFToTextConverter:
                 backend_name = backend_result.backend or "unknown"
                 return PDFConversionResult(success=False, error=f"{backend_name}: empty output")
             os.replace(tmp_path, txt_path)
-            return backend_result
+            # 将书签附加到结果中
+            return PDFConversionResult(
+                success=backend_result.success,
+                backend=backend_result.backend,
+                error=backend_result.error,
+                outlines=outlines,
+            )
 
         _cleanup_tmp()
         result = self._convert_with_pdfplumber(pdf_path, tmp_path)

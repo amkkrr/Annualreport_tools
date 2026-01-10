@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Optional, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Optional, Sequence
 
 
 MDA_TITLES: list[str] = [
@@ -86,4 +86,250 @@ def calculate_mda_score(text: str, *, keywords: Optional[Sequence[str]] = None) 
         keyword_total=keyword_total,
         dots_count=dots_count,
         length=length,
+    )
+
+
+# =============================================================================
+# 负向特征检测
+# =============================================================================
+
+# 表格残留检测：连续 N 行仅含数字/小数点/空格/百分号/负号
+_TABLE_LINE_RE = re.compile(r"^[\d\s.,\-%+]+$")
+_TABLE_CONSECUTIVE_THRESHOLD = 3
+
+# 页眉干扰检测：短行长度阈值
+_HEADER_MAX_LEN = 50
+_HEADER_REPEAT_THRESHOLD = 3
+
+# 乱码检测：合法字符范围
+_VALID_CHARS_RE = re.compile(
+    r"[\u4e00-\u9fff"  # 中文
+    r"a-zA-Z"  # 英文
+    r"0-9"  # 数字
+    r"\s"  # 空白
+    r"。，、；：？！""''【】（）《》"  # 中文标点
+    r".,;:?!\"'()\[\]{}<>"  # 英文标点
+    r"\-+=%$#@&*/_~`\n\r\t"  # 特殊符号
+    r"]"
+)
+_GARBLED_RATIO_THRESHOLD = 0.05
+
+
+@dataclass(frozen=True)
+class NegativeFeatures:
+    """负向特征检测结果"""
+
+    table_residue_score: int  # 表格残留扣分 (0 or 15)
+    header_noise_score: int  # 页眉干扰扣分 (0 or 10)
+    garbled_ratio: float  # 乱码比例 (0.0-1.0)
+    garbled_penalty: int  # 乱码扣分 (0 or 20)
+
+    table_residue_lines: int  # 检测到的表格行数
+    repeated_headers: list[str] = field(default_factory=list)  # 检测到的重复页眉
+
+
+def detect_table_residue(text: str) -> tuple[bool, int]:
+    """
+    检测表格残留（连续数字行）。
+
+    规则：连续 3 行以上满足「仅含数字、小数点、空格、百分号」
+
+    Returns:
+        (is_detected, max_consecutive_count)
+    """
+    if not text:
+        return False, 0
+
+    lines = text.splitlines()
+    max_consecutive = 0
+    current_consecutive = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            current_consecutive = 0
+            continue
+        if _TABLE_LINE_RE.match(stripped):
+            current_consecutive += 1
+            max_consecutive = max(max_consecutive, current_consecutive)
+        else:
+            current_consecutive = 0
+
+    return max_consecutive >= _TABLE_CONSECUTIVE_THRESHOLD, max_consecutive
+
+
+def detect_header_noise(text: str) -> tuple[bool, list[str]]:
+    """
+    检测页眉干扰（重复短行）。
+
+    规则：长度 <50 的行出现次数 >3 且内容相同
+
+    Returns:
+        (is_detected, repeated_lines)
+    """
+    if not text:
+        return False, []
+
+    lines = text.splitlines()
+    short_line_counts: dict[str, int] = {}
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if len(stripped) < _HEADER_MAX_LEN:
+            short_line_counts[stripped] = short_line_counts.get(stripped, 0) + 1
+
+    repeated = [
+        line
+        for line, count in short_line_counts.items()
+        if count > _HEADER_REPEAT_THRESHOLD
+    ]
+
+    return len(repeated) > 0, repeated
+
+
+def calculate_garbled_ratio(text: str) -> float:
+    """
+    计算乱码比例。
+
+    乱码定义：非合法字符的占比。
+
+    Returns:
+        ratio: 0.0-1.0
+    """
+    if not text:
+        return 0.0
+
+    valid_count = len(_VALID_CHARS_RE.findall(text))
+    total = len(text)
+
+    if total == 0:
+        return 0.0
+
+    return 1.0 - (valid_count / total)
+
+
+def detect_negative_features(text: str) -> NegativeFeatures:
+    """
+    检测文本中的负向特征。
+
+    Args:
+        text: MD&A 文本
+
+    Returns:
+        NegativeFeatures: 包含各负向特征检测结果
+    """
+    if not text:
+        return NegativeFeatures(
+            table_residue_score=0,
+            header_noise_score=0,
+            garbled_ratio=0.0,
+            garbled_penalty=0,
+            table_residue_lines=0,
+            repeated_headers=[],
+        )
+
+    # 表格残留检测
+    table_detected, table_lines = detect_table_residue(text)
+    table_score = 15 if table_detected else 0
+
+    # 页眉干扰检测
+    header_detected, repeated_headers = detect_header_noise(text)
+    header_score = 10 if header_detected else 0
+
+    # 乱码比例检测
+    garbled_ratio = calculate_garbled_ratio(text)
+    garbled_penalty = 20 if garbled_ratio > _GARBLED_RATIO_THRESHOLD else 0
+
+    return NegativeFeatures(
+        table_residue_score=table_score,
+        header_noise_score=header_score,
+        garbled_ratio=garbled_ratio,
+        garbled_penalty=garbled_penalty,
+        table_residue_lines=table_lines,
+        repeated_headers=repeated_headers,
+    )
+
+
+# =============================================================================
+# 综合质量评分
+# =============================================================================
+
+# 各质量标记对应的扣分
+_FLAG_PENALTIES: dict[str, int] = {
+    "FLAG_LENGTH_ABNORMAL": 10,
+    "FLAG_CONTENT_MISMATCH": 15,
+    "FLAG_TAIL_OVERLAP": 10,
+    "FLAG_PAGE_BOUNDARY_MISSING": 5,
+    "FLAG_TOC_MISMATCH": 10,
+    "FLAG_EXTRACT_FAILED": 100,  # 直接归零
+    "FLAG_YOY_CHANGE_HIGH": 5,
+}
+
+# 低分阈值
+NEEDS_REVIEW_THRESHOLD = 60
+
+# 目录引导线过多的阈值
+_DOTS_EXCESS_THRESHOLD = 10
+
+
+@dataclass(frozen=True)
+class QualityScore:
+    """综合质量评分结果"""
+
+    score: int  # 0-100
+    needs_review: bool
+    penalties: dict[str, int] = field(default_factory=dict)  # 各项扣分明细
+
+
+def calculate_quality_score(
+    text: str,
+    quality_flags: Optional[Sequence[str]],
+    score_detail: Optional[ScoreDetail],
+) -> QualityScore:
+    """
+    计算综合质量评分。
+
+    Args:
+        text: MD&A 文本
+        quality_flags: 现有质量标记
+        score_detail: 现有评分细节
+
+    Returns:
+        QualityScore: 包含最终评分和 needs_review 标记
+    """
+    if not text:
+        return QualityScore(score=0, needs_review=True, penalties={"empty_text": 100})
+
+    base = 100
+    penalties: dict[str, int] = {}
+
+    # 1. 现有质量标记扣分
+    if quality_flags:
+        for flag in quality_flags:
+            if flag in _FLAG_PENALTIES:
+                penalties[flag.lower()] = _FLAG_PENALTIES[flag]
+
+    # 2. 目录引导线扣分 (基于 score_detail)
+    if score_detail and score_detail.dots_count >= _DOTS_EXCESS_THRESHOLD:
+        penalties["dots_excess"] = 20
+
+    # 3. 新增负向特征检测
+    neg_features = detect_negative_features(text)
+    if neg_features.table_residue_score > 0:
+        penalties["table_residue"] = neg_features.table_residue_score
+    if neg_features.header_noise_score > 0:
+        penalties["header_noise"] = neg_features.header_noise_score
+    if neg_features.garbled_penalty > 0:
+        penalties["garbled_text"] = neg_features.garbled_penalty
+
+    # 4. 计算最终分数
+    total_penalty = sum(penalties.values())
+    final_score = max(0, base - total_penalty)
+
+    return QualityScore(
+        score=final_score,
+        needs_review=final_score < NEEDS_REVIEW_THRESHOLD,
+        penalties=penalties,
     )

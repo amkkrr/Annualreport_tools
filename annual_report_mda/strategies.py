@@ -551,8 +551,48 @@ def extract_mda_iterative(
     if not candidates:
         return None
 
+    # 交叉校验 TOC 和正文结果
+    toc_result = next((c for c in candidates if c.used_rule_type == "toc"), None)
+    body_result = next((c for c in candidates if c.used_rule_type == "generic"), None)
+
+    extra_flags: list[str] = []
+    if toc_result is not None and body_result is not None:
+        # 比较页码范围差异
+        toc_start = toc_result.page_index_start
+        body_start = body_result.page_index_start
+        page_diff = abs(toc_start - body_start)
+        if page_diff > 2:
+            extra_flags.append("FLAG_TOC_MISMATCH")
+
     candidates.sort(key=lambda c: (c.score, len(c.mda_raw)), reverse=True)
     best = candidates[0]
     if best.score <= 0.4:
         return None
+
+    # 如果有额外的质量标记，创建新的结果对象
+    if extra_flags:
+        merged_flags = list(best.quality_flags) + extra_flags
+        merged_detail = dict(best.quality_detail)
+        if toc_result and body_result:
+            merged_detail["toc_body_page_diff"] = abs(
+                toc_result.page_index_start - body_result.page_index_start
+            )
+        best = ExtractionResult(
+            mda_raw=best.mda_raw,
+            score=best.score,
+            score_detail=best.score_detail,
+            page_index_start=best.page_index_start,
+            page_index_end=best.page_index_end,
+            page_count=best.page_count,
+            printed_page_start=best.printed_page_start,
+            printed_page_end=best.printed_page_end,
+            hit_start=best.hit_start,
+            hit_end=best.hit_end,
+            is_truncated=best.is_truncated,
+            truncation_reason=best.truncation_reason,
+            used_rule_type=best.used_rule_type,
+            quality_flags=merged_flags,
+            quality_detail=merged_detail,
+        )
+
     return best

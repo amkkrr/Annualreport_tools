@@ -52,6 +52,15 @@ class MDAUpsertRecord:
     used_rule_type: Optional[str] = None
     extracted_at: datetime = field(default_factory=utc_now)
 
+    # 字段切分结果
+    mda_review: Optional[str] = None
+    mda_outlook: Optional[str] = None
+    outlook_split_position: Optional[int] = None
+
+    # 综合质量评分
+    quality_score: Optional[int] = None
+    needs_review: bool = False
+
 
 def is_successful_record(mda_raw: Optional[str], char_count: Optional[int]) -> bool:
     if mda_raw is None:
@@ -112,13 +121,18 @@ def upsert_mda_text(conn: "duckdb.DuckDBPyConnection", record: MDAUpsertRecord) 
             truncation_reason,
             quality_flags,
             quality_detail,
+            quality_score,
+            needs_review,
             source_path,
             source_sha256,
             extractor_version,
             extracted_at,
-            used_rule_type
+            used_rule_type,
+            mda_review,
+            mda_outlook,
+            outlook_split_position
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (stock_code, year, source_sha256) DO UPDATE SET
             mda_raw = excluded.mda_raw,
             char_count = excluded.char_count,
@@ -133,10 +147,15 @@ def upsert_mda_text(conn: "duckdb.DuckDBPyConnection", record: MDAUpsertRecord) 
             truncation_reason = excluded.truncation_reason,
             quality_flags = excluded.quality_flags,
             quality_detail = excluded.quality_detail,
+            quality_score = excluded.quality_score,
+            needs_review = excluded.needs_review,
             source_path = excluded.source_path,
             extractor_version = excluded.extractor_version,
             extracted_at = excluded.extracted_at,
-            used_rule_type = excluded.used_rule_type;
+            used_rule_type = excluded.used_rule_type,
+            mda_review = excluded.mda_review,
+            mda_outlook = excluded.mda_outlook,
+            outlook_split_position = excluded.outlook_split_position;
         """,
         (
             record.stock_code,
@@ -154,11 +173,16 @@ def upsert_mda_text(conn: "duckdb.DuckDBPyConnection", record: MDAUpsertRecord) 
             record.truncation_reason,
             quality_flags_json,
             quality_detail_json,
+            record.quality_score,
+            record.needs_review,
             record.source_path,
             record.source_sha256,
             record.extractor_version,
             record.extracted_at,
             record.used_rule_type,
+            record.mda_review,
+            record.mda_outlook,
+            record.outlook_split_position,
         ),
     )
 
