@@ -68,6 +68,9 @@
 | `scripts/llm_annotate.py`                 | LLM 辅助标注工具，生成黄金数据集          |
 | `scripts/evaluate_extraction.py`          | 提取质量评估，支持规则+LLM 双模式         |
 | `scripts/auto_improve.py`                 | 自动分析失败模式并生成改进建议            |
+| `scripts/fix_golden_offsets.py`           | 修复黄金数据集中 LLM 标注的字符偏移量     |
+| `scripts/select_golden_samples.py`        | 从数据库随机选取黄金样本用于评估          |
+| `scripts/download_samples.py`             | 下载黄金样本对应的年报文件                |
 | `./res/AnnualReport_links_2004_2023.xlsx` | 涵盖2004-2023年的精选主表                 |
 
 ## 脚本索引（旧版编号）
