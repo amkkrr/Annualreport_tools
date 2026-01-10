@@ -261,7 +261,13 @@ def main():
             sys.exit(1)
 
         with open(input_path, encoding="utf-8") as f:
-            sample_list = json.load(f)
+            data = json.load(f)
+
+        # Handle both flat list and nested {"samples": [...]} format
+        if isinstance(data, dict) and "samples" in data:
+            sample_list = data["samples"]
+        else:
+            sample_list = data
 
         batch_annotate(sample_list, args.output, args.concurrency, args.model)
 
