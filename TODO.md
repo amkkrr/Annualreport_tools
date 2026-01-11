@@ -175,15 +175,53 @@ duckdb data/annual_reports.duckdb "SELECT stock_code, year, quality_score FROM m
 
 **子任务：**
 
-- [ ] `P1` **Self-Refine 模式**：提取 → 自我评估（遗漏/噪音检测）→ 修正重提取
-- [ ] `P2` **动态 Few-shot 样本库**：成功案例向量化存储，新任务时检索相似行业/年份案例作为示例
-- [ ] `P2` **策略权重自适应**：记录各策略成功率，动态调整选择权重
-- [ ] `P2` **失败模式学习**：分析失败原因 → 生成排除规则 → 加入负面 prompt
-- [ ] `P2` 实现 LLM API 客户端，支持 DeepSeek/Qwen/GPT-4o-mini/Claude
-- [ ] `P2` 设计 Prompt 模板：分析目录结构，提取 start/end pattern
-- [ ] `P2` 实现规则写入 `extraction_rules` 表的逻辑
-- [ ] `P2` 添加 `--learn` 参数支持，启用自适应学习模式
-- [ ] `P2` 实现失败熔断与降级机制（API 调用失败时回退到 CPU 策略）
+- [x] `P1` **Self-Refine 模式**：提取 → 自我评估（遗漏/噪音检测）→ 修正重提取（完成于 2026-01-11）
+- [x] `P2` **动态 Few-shot 样本库**：成功案例向量化存储，新任务时检索相似行业/年份案例作为示例（完成于 2026-01-11）
+- [x] `P2` **策略权重自适应**：记录各策略成功率，动态调整选择权重（完成于 2026-01-11）
+- [x] `P2` **失败模式学习**：分析失败原因 → 生成排除规则 → 加入负面 prompt（完成于 2026-01-11）
+- [x] `P2` 实现 LLM API 客户端，支持 DeepSeek/Qwen/GPT-4o-mini/Claude（完成于 2026-01-11）
+- [x] `P2` 设计 Prompt 模板：分析目录结构，提取 start/end pattern（完成于 2026-01-11）
+- [x] `P2` 实现规则写入 `extraction_rules` 表的逻辑（完成于 2026-01-11）
+- [ ] `P2` 集成 `--learn` 参数到主提取循环（参数已添加，待集成到 `_extract_one_worker`）
+- [ ] `P2` 实现策略层失败熔断与降级（LLM 提供商降级已实现，待实现策略层回退到 CPU）
+
+### 📍 阶段性成果: LLM 自适应学习基础设施 🔨 (部分完成 2026-01-11)
+
+> 核心模块已实现（7/9），待集成到主提取流程
+
+#### 已完成功能验收
+
+| ID | 验收项 | Given | When | Then | 状态 |
+|----|--------|-------|------|------|------|
+| L1-01 | LLM 客户端 | 配置 API Key | 调用 `LLMClient().chat()` | 支持 4 提供商，自动降级 | ✅ |
+| L1-02 | Self-Refine | 低质量提取结果 | 调用 `self_refine()` | 返回改进后的结果 + 迭代日志 | ✅ |
+| L1-03 | Few-shot 库 | 成功样本存在 | 调用 `retrieve_similar()` | 返回最相似的 K 个样本 | ✅ |
+| L1-04 | 策略权重 | 运行 N 次提取 | 查询 `strategy_stats` 表 | 记录各策略成功率 | ✅ |
+| L1-05 | 失败模式 | 提取失败 | 调用 `record_failure()` | 记录失败特征并生成规则 | ✅ |
+| L1-06 | 规则持久化 | LLM 学习成功 | 调用 `upsert_extraction_rule()` | `extraction_rules` 表新增/更新记录 | ✅ |
+| L1-07 | 单元测试 | - | 执行 `pytest tests/test_llm_client.py tests/test_adaptive.py` | 所有测试通过 | ✅ |
+
+#### 待集成功能（剩余工作）
+
+| ID | 任务 | 当前状态 | 预计工作量 |
+|----|------|---------|-----------|
+| L2-01 | `--learn` 参数集成 | 参数已定义，逻辑未连接 | ~2h |
+| L2-02 | 策略层失败回退 | LLM 降级已实现，策略层未实现 | ~1h |
+
+#### 测试命令
+
+```bash
+# 运行 LLM 和自适应学习单元测试
+pytest tests/test_llm_client.py tests/test_adaptive.py -v
+
+# 手动测试 LLM 客户端
+python -c "from annual_report_mda.llm import LLMClient; print(LLMClient().chat('测试'))"
+
+# 查询策略统计
+duckdb data/annual_reports.duckdb "SELECT * FROM strategy_stats"
+```
+
+---
 
 ### 📍 里程碑 M2.5: MD&A 提取器测试与质检完备 ✅ (验收通过 2026-01-11)
 
@@ -356,11 +394,12 @@ ls -la logs/
 | **M1** | 配置统一 + DuckDB 写入跑通 | - | 6 功能 + 3 质量 | ✅ 通过 |
 | **M2** | 全流程 DuckDB 驱动 + 质量评估体系 | M1 | 6 功能 + 3 质量 | ✅ 通过 |
 | **M2.5** | MD&A 提取器测试与质检完备 | M2 | 5 功能 + 3 质量 | ✅ 通过 |
+| **M2.5.4** | LLM 自适应学习基础设施 | M2.5 | 7 功能 + 2 待集成 | 🔨 部分完成 (78%) |
 | **M3** | NLP 分析模块可用 | M2.5 | 5 功能 + 3 质量 | ⏳ 待验收 |
 | **M4** | CI/CD + 日志系统 | 可与 M1-M3 并行 | 5 功能 + 3 质量 | ⏳ 待验收 |
 
 ```
-M1 ──────► M2 ──────► M2.5 ──────► M3
+M1 ──────► M2 ──────► M2.5 ──────► M2.5.4 (部分) ──────► M3
                         ↑
 M4 (可并行) ────────────┘
 ```
