@@ -71,6 +71,8 @@
 | `scripts/fix_golden_offsets.py`           | 修复黄金数据集中 LLM 标注的字符偏移量     |
 | `scripts/select_golden_samples.py`        | 从数据库随机选取黄金样本用于评估          |
 | `scripts/download_samples.py`             | 下载黄金样本对应的年报文件                |
+| `scripts/backfill_quality_score.py`       | M2 验收 - 质量评分回填脚本                |
+| `scripts/migrate_mda_schema.py`           | M2 验收 - Schema 迁移脚本                 |
 | `./res/AnnualReport_links_2004_2023.xlsx` | 涵盖2004-2023年的精选主表                 |
 
 ## 脚本索引（旧版编号）
@@ -168,6 +170,7 @@ pip install -r requirements.txt
 
 | 日期       | 亮点                                                          |
 | ---------- | ------------------------------------------------------------- |
+| 2026/01/11 | **M2 验收准备**：新增 Schema 迁移脚本、质量评分回填脚本、M2 验收测试 |
 | 2026/01/10 | **MD&A 提取策略优化**：平均分从 68.86 提升至 96.51，修复引用词误匹配、结束标记误识别等问题 |
 | 2026/01/10 | 新增黄金数据集工具链：LLM 辅助标注、评估脚本、自动改进分析    |
 | 2026/01/08 | **DuckDB 核心化 (M1.2) 完成**：爬虫/转换器支持双模式，新增迁移脚本和单元测试 |
