@@ -337,10 +337,12 @@ python 4.advanced_analysis.py lda --n-topics 10 --output results/lda_topics.json
   - 结论: 强烈推荐使用 Streamlit，预计 5 天可完成 MVP
 - [x] `P3` 实现 Streamlit WebUI MVP（监控仪表盘、配置管理、任务管理）(完成于 2026-01-11)
   - 实现方案: [plans/streamlit-webui-implementation.md](plans/streamlit-webui-implementation.md)
-- [ ] `P1` WebUI 任务状态持久化：使用 PID 文件 + `psutil` 管理后台任务生命周期（启动/恢复/停止），替代基于 `st.session_state` 的内存状态
-  - 说明：在 WebUI 任务管理模块中引入 PID 文件（如 `data/run/<task>.pid`）与进程检测逻辑，确保页面刷新或服务重启后仍可准确展示并控制任务状态
-- [ ] `P2` WebUI 智能选股与年报探索器：支持从源头按需选择年报并触发处理流程，替代纯全量爬取模式
-  - 说明：在爬虫阶段前增加“查询-选择-处理”交互：基于 CNINFO 接口或 DuckDB 中公司信息检索候选年报 → 用户勾选目标报告 → 一键触发定向下载/转换/提取任务
+- [x] `P1` WebUI 任务状态持久化：使用 PID 文件 + `psutil` 管理后台任务生命周期（启动/恢复/停止），替代基于 `st.session_state` 的内存状态 (完成于 2026-01-11)
+  - 实现: `webui/components/pid_manager.py` - PID 文件管理器
+  - 改造: `webui/components/task_runner.py` - 使用 PID 持久化替代 session_state
+- [x] `P2` WebUI 智能选股与年报探索器：支持从源头按需选择年报并触发处理流程，替代纯全量爬取模式 (完成于 2026-01-11)
+  - 新增页面: `webui/pages/4_年报浏览器.py`
+  - 新增查询: `db_utils.search_reports()`, `db_utils.get_filter_options()`
 
 ### 📍 里程碑 M4: 工程化基础设施完备 ⏳
 

@@ -14,12 +14,6 @@ from webui.components import task_runner
 
 st.title("任务管理")
 
-# Initialize session state for tasks
-if "task_states" not in st.session_state:
-    st.session_state.task_states = {
-        name: task_runner.TaskState() for name in task_runner.TASK_SCRIPTS
-    }
-
 # Task Control Panel
 st.subheader("任务控制面板")
 
@@ -77,7 +71,7 @@ for i, (task_key, meta) in enumerate(tasks_meta.items()):
 if st.button("刷新日志"):
     st.rerun()
 
-# Auto-refresh using fragment (Streamlit 1.33+)
+# Auto-refresh using rerun
 if auto_refresh:
     import time
 
