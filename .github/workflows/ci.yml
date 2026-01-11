@@ -24,7 +24,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
       - name: Install linting dependencies
-        run: pip install ruff
+        run: pip install ruff==0.8.4  # Match pre-commit version
       - name: Run ruff check
         run: ruff check . --output-format=github
       - name: Run ruff format check
