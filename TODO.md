@@ -320,9 +320,9 @@ python 4.advanced_analysis.py lda --n-topics 10 --output results/lda_topics.json
 
 ### 4.1 CI/CD 流水线建设
 
-- [ ] `P1` 配置 GitHub Actions，实现代码提交后的自动 Lint 检查（`ruff` / `black`）
-- [ ] `P1` 编写核心功能的单元测试（爬虫解析逻辑、PDF 清洗逻辑、评分器）
-- [ ] `P2` 集成测试覆盖率报告（`pytest-cov`）
+- [x] `P1` 配置 GitHub Actions，实现代码提交后的自动 Lint 检查（`ruff` / `black`）（完成于 2026-01-11）
+- [x] `P1` 编写核心功能的单元测试（爬虫解析逻辑、PDF 清洗逻辑、评分器）（完成于 2026-01-11）
+- [x] `P2` 集成测试覆盖率报告（`pytest-cov`）（完成于 2026-01-11）
 
 ### 4.2 日志系统完善
 
