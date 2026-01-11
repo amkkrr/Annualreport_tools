@@ -335,6 +335,8 @@ python 4.advanced_analysis.py lda --n-topics 10 --output results/lda_topics.json
 - [x] `P3` 调研 Streamlit 开发参数配置与监控界面（WebUI）✅ (完成于 2026-01-11)
   - 调研报告: [plans/streamlit-webui-research.md](plans/streamlit-webui-research.md)
   - 结论: 强烈推荐使用 Streamlit，预计 5 天可完成 MVP
+- [x] `P3` 实现 Streamlit WebUI MVP（监控仪表盘、配置管理、任务管理）(完成于 2026-01-11)
+  - 实现方案: [plans/streamlit-webui-implementation.md](plans/streamlit-webui-implementation.md)
 
 ### 📍 里程碑 M4: 工程化基础设施完备 ⏳
 
