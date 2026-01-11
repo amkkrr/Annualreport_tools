@@ -94,10 +94,10 @@ def analyze_row(row, keywords):
 
 def main():
     df = load_data("data/annual_reports.duckdb", 2022)
-    
+
     # 简单的应用逻辑，生产环境可并行化
     results = df.apply(lambda row: analyze_row(row, ["AI", "大模型"]), axis=1)
-    
+
     # 导出
     results.to_excel("analysis_2022.xlsx")
 ```

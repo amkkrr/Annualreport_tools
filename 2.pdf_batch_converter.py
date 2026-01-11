@@ -1,11 +1,11 @@
-'''
+"""
 @Project ：PycharmProjects
 @File    ：年报批量下载.py
 @IDE     ：PyCharm
 @Author  ：lingxiaotian
 @Date    ：2023/5/30 11:39
 @LastEditTime: 2025/11/21 14:10
-'''
+"""
 
 from __future__ import annotations
 
@@ -15,12 +15,14 @@ import logging
 import os
 import re
 import sys
-from importlib import import_module
 import warnings
+from collections.abc import Iterable
 from dataclasses import dataclass
+from importlib import import_module
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Any, Iterable, Optional, Tuple
+from typing import Any
+
 
 def _import_or_raise(module_name: str, install_hint: str) -> Any:
     """按需导入第三方依赖，失败时抛出带安装提示的错误。
@@ -32,19 +34,18 @@ def _import_or_raise(module_name: str, install_hint: str) -> Any:
     except ModuleNotFoundError as e:
         raise ModuleNotFoundError(f"缺少依赖 {module_name}，请先安装：{install_hint}") from e
 
+
 # 抑制pdfplumber的CropBox警告
-warnings.filterwarnings('ignore', message='.*CropBox.*')
+warnings.filterwarnings("ignore", message=".*CropBox.*")
 
 # 日志配置
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 @dataclass(frozen=True)
 class ConverterConfig:
     """PDF批量下载转换配置类。"""
+
     excel_file: str  # Excel表格路径
     pdf_dir: str  # PDF存储目录
     txt_dir: str  # TXT存储目录
@@ -53,12 +54,12 @@ class ConverterConfig:
     max_retries: int = 3  # 下载最大重试次数
     timeout: int = 15  # 请求超时时间（秒）
     chunk_size: int = 8192  # 下载块大小
-    processes: Optional[int] = None  # 进程数，None表示自动
+    processes: int | None = None  # 进程数，None表示自动
 
 
 class PDFDownloader:
     """PDF下载器类。"""
-    
+
     HEADERS = {
         "Accept-Encoding": "gzip, deflate, br",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -68,7 +69,7 @@ class PDFDownloader:
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     }
-    
+
     def __init__(self, timeout: int = 15, chunk_size: int = 8192) -> None:
         self.timeout = timeout
         self.chunk_size = chunk_size
@@ -76,21 +77,21 @@ class PDFDownloader:
         self._requests = requests
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
-    
+
     def download(self, pdf_url: str, pdf_file_path: str) -> bool:
         """下载PDF文件并验证完整性。
-        
+
         Args:
             pdf_url: PDF下载链接
             pdf_file_path: 保存路径
-            
+
         Returns:
             下载是否成功
         """
         try:
             # 请求PDF文件
             response = self.session.get(pdf_url, stream=True, timeout=self.timeout)
-            
+
             # 检查HTTP状态码
             if response.status_code == 403:
                 logging.error(f"403 Forbidden: 服务器禁止访问 {pdf_url}")
@@ -98,26 +99,26 @@ class PDFDownloader:
             elif response.status_code != 200:
                 logging.error(f"请求失败: {response.status_code} - {response.text[:500]}")
                 return False
-            
+
             # 验证Content-Type
             content_type = response.headers.get("Content-Type", "")
             if "pdf" not in content_type.lower():
                 logging.error(f"服务器返回的不是 PDF: {content_type}")
                 return False
-            
+
             # 写入PDF文件
             with open(pdf_file_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=self.chunk_size):
                     if chunk:
                         f.write(chunk)
-            
+
             # 验证文件完整性
             if not self._verify_pdf(pdf_file_path):
                 return False
-            
+
             logging.info(f"PDF 下载成功: {pdf_file_path}")
             return True
-            
+
         except self._requests.exceptions.Timeout:
             logging.error(f"下载超时: {pdf_url}")
             return False
@@ -127,18 +128,18 @@ class PDFDownloader:
         except OSError as e:
             logging.error(f"文件写入失败: {e}")
             return False
-    
+
     @staticmethod
     def _verify_pdf(pdf_file_path: str) -> bool:
         """验证PDF文件完整性。"""
         if not os.path.exists(pdf_file_path):
             logging.error(f"文件不存在: {pdf_file_path}")
             return False
-        
+
         if os.path.getsize(pdf_file_path) == 0:
             logging.error(f"下载失败，文件大小为 0 KB: {pdf_file_path}")
             return False
-        
+
         try:
             with open(pdf_file_path, "rb") as f:
                 first_bytes = f.read(5)
@@ -148,28 +149,26 @@ class PDFDownloader:
         except OSError as e:
             logging.error(f"文件验证失败: {e}")
             return False
-        
+
         return True
+
 
 class PDFConverter:
     """PDF转TXT转换器类。"""
-    
+
     # 文件名非法字符正则
     INVALID_CHARS = r'[\\/:*?"<>|]'
-    
+
     def __init__(self, config: ConverterConfig) -> None:
         self.config = config
-        self.downloader = PDFDownloader(
-            timeout=config.timeout,
-            chunk_size=config.chunk_size
-        )
+        self.downloader = PDFDownloader(timeout=config.timeout, chunk_size=config.chunk_size)
         self.text_converter = PDFToTextConverter()
-    
+
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
         """清理文件名中的非法字符。"""
-        return re.sub(PDFConverter.INVALID_CHARS, '', filename)
-    
+        return re.sub(PDFConverter.INVALID_CHARS, "", filename)
+
     def _download_with_retry(self, pdf_url: str, pdf_file_path: str) -> bool:
         """带重试机制的下载。"""
         for attempt in range(1, self.config.max_retries + 1):
@@ -177,10 +176,10 @@ class PDFConverter:
                 return True
             if attempt < self.config.max_retries:
                 logging.warning(f"重试下载 ({attempt}/{self.config.max_retries}): {pdf_url}")
-        
+
         logging.error(f"下载失败（已重试 {self.config.max_retries} 次）: {pdf_url}")
         return False
-    
+
     def convert_pdf_to_txt(self, pdf_path: str, txt_path: str) -> PDFConversionResult:
         """将PDF转换为TXT，使用多种库作为备用方案并返回结构化结果。"""
         result = self.text_converter.convert_pdf_to_txt(Path(pdf_path), Path(txt_path))
@@ -192,22 +191,16 @@ class PDFConverter:
         else:
             logging.error(f"所有PDF转换方法均失败: {pdf_path}")
         return result
-    
-    def process_single_file(
-        self,
-        code: int,
-        name: str,
-        year: int,
-        pdf_url: str
-    ) -> bool:
+
+    def process_single_file(self, code: int, name: str, year: int, pdf_url: str) -> bool:
         """处理单个文件的下载和转换。
-        
+
         Args:
             code: 公司代码
             name: 公司简称
             year: 年份
             pdf_url: PDF下载链接
-            
+
         Returns:
             处理是否成功
         """
@@ -215,23 +208,23 @@ class PDFConverter:
         base_name = self._sanitize_filename(f"{code:06}_{name}_{year}")
         pdf_file_path = os.path.join(self.config.pdf_dir, f"{base_name}.pdf")
         txt_file_path = os.path.join(self.config.txt_dir, f"{base_name}.txt")
-        
+
         try:
             # 检查TXT是否已存在
             if os.path.exists(txt_file_path):
                 logging.info(f"文件已存在，跳过: {base_name}.txt")
                 return True
-            
+
             # 下载PDF（如果不存在）
             if not os.path.exists(pdf_file_path):
                 if not self._download_with_retry(pdf_url, pdf_file_path):
                     return False
-            
+
             # 转换PDF为TXT
             conversion = self.convert_pdf_to_txt(pdf_file_path, txt_file_path)
             if not conversion.success:
                 return False
-            
+
             # 删除PDF（如果配置要求）
             if self.config.delete_pdf and os.path.exists(pdf_file_path):
                 try:
@@ -239,9 +232,9 @@ class PDFConverter:
                     logging.info(f"已删除PDF: {pdf_file_path}")
                 except OSError as e:
                     logging.warning(f"删除PDF失败: {e}")
-            
+
             return True
-            
+
         except Exception as e:
             logging.error(f"处理文件失败 {code:06}_{name}_{year}: {e}")
             return False
@@ -252,7 +245,7 @@ class PDFOutlineEntry:
     """PDF 书签条目。"""
 
     title: str
-    page_number: Optional[int]
+    page_number: int | None
     level: int  # 层级深度 (0 为顶级)
 
 
@@ -261,15 +254,15 @@ class PDFConversionResult:
     """单个PDF->TXT转换的结果。"""
 
     success: bool
-    backend: Optional[str] = None
-    error: Optional[str] = None
-    outlines: Optional[list[PDFOutlineEntry]] = None
+    backend: str | None = None
+    error: str | None = None
+    outlines: list[PDFOutlineEntry] | None = None
 
 
 class PDFToTextConverter:
     """纯PDF->TXT转换器（不包含下载逻辑）。"""
 
-    def _extract_outlines_pypdf2(self, pdf_path: Path) -> Optional[list[PDFOutlineEntry]]:
+    def _extract_outlines_pypdf2(self, pdf_path: Path) -> list[PDFOutlineEntry] | None:
         """从 PDF 提取书签（使用 PyPDF2）。"""
         try:
             PyPDF2 = _import_or_raise("PyPDF2", "pip install PyPDF2")
@@ -293,7 +286,7 @@ class PDFToTextConverter:
                     else:
                         # 书签条目
                         title = getattr(item, "title", None) or str(item.get("/Title", ""))
-                        page_num: Optional[int] = None
+                        page_num: int | None = None
                         try:
                             # 尝试获取页码
                             if hasattr(item, "page"):
@@ -303,11 +296,13 @@ class PDFToTextConverter:
                         except Exception:
                             pass
                         if title:
-                            entries.append(PDFOutlineEntry(
-                                title=title.strip(),
-                                page_number=page_num,
-                                level=level,
-                            ))
+                            entries.append(
+                                PDFOutlineEntry(
+                                    title=title.strip(),
+                                    page_number=page_num,
+                                    level=level,
+                                )
+                            )
 
             _traverse_outline(outline)
             return entries if entries else None
@@ -323,7 +318,7 @@ class PDFToTextConverter:
             return PDFConversionResult(success=False, error=str(e))
         try:
             with pdfplumber.open(str(pdf_path)) as pdf:
-                with open(txt_path, 'w', encoding='utf-8') as f:
+                with open(txt_path, "w", encoding="utf-8") as f:
                     for page_num, page in enumerate(pdf.pages, 1):
                         try:
                             text = page.extract_text()
@@ -343,7 +338,7 @@ class PDFToTextConverter:
             return PDFConversionResult(success=False, error=str(e))
         try:
             reader = PdfReader(str(pdf_path))
-            with open(txt_path, 'w', encoding='utf-8') as f:
+            with open(txt_path, "w", encoding="utf-8") as f:
                 for page_num, page in enumerate(reader.pages, 1):
                     try:
                         text = page.extract_text()
@@ -358,12 +353,14 @@ class PDFToTextConverter:
 
     def _convert_with_pdfminer(self, pdf_path: Path, txt_path: Path) -> PDFConversionResult:
         try:
-            pdfminer_extract = _import_or_raise("pdfminer.high_level", "pip install pdfminer.six").extract_text
+            pdfminer_extract = _import_or_raise(
+                "pdfminer.high_level", "pip install pdfminer.six"
+            ).extract_text
         except ModuleNotFoundError as e:
             return PDFConversionResult(success=False, error=str(e))
         try:
             text = pdfminer_extract(str(pdf_path))
-            with open(txt_path, 'w', encoding='utf-8') as f:
+            with open(txt_path, "w", encoding="utf-8") as f:
                 f.write(text)
             return PDFConversionResult(success=True, backend="pdfminer")
         except Exception as e:
@@ -431,11 +428,11 @@ class ConvertOnlyConfig:
     """纯转换模式配置类。"""
 
     pdf_dir: str
-    txt_dir: Optional[str] = None
+    txt_dir: str | None = None
     recursive: bool = False
     delete_pdf: bool = False
     force: bool = False
-    processes: Optional[int] = None
+    processes: int | None = None
     file_pattern: str = "*.pdf"
 
 
@@ -446,8 +443,8 @@ class ConvertOnlyResult:
     status: str  # "success" | "skipped" | "failed"
     pdf_path: Path
     txt_path: Path
-    backend: Optional[str] = None
-    error: Optional[str] = None
+    backend: str | None = None
+    error: str | None = None
 
 
 def _matches_file_pattern(path: Path, file_pattern: str) -> bool:
@@ -483,7 +480,7 @@ def _scan_pdf_files(pdf_dir: Path, recursive: bool, file_pattern: str) -> list[P
     return pdf_files
 
 
-def _resolve_txt_path(pdf_path: Path, pdf_dir: Path, txt_dir: Optional[Path], recursive: bool) -> Path:
+def _resolve_txt_path(pdf_path: Path, pdf_dir: Path, txt_dir: Path | None, recursive: bool) -> Path:
     """根据规格书规则计算目标TXT路径。"""
     if txt_dir is None:
         return pdf_path.with_suffix(".txt")
@@ -501,7 +498,7 @@ def _is_valid_txt_file(path: Path) -> bool:
         return False
 
 
-def _convert_only_worker(args: Tuple[str, str, Optional[str], bool, bool, str]) -> ConvertOnlyResult:
+def _convert_only_worker(args: tuple[str, str, str | None, bool, bool, str]) -> ConvertOnlyResult:
     """纯转换模式的多进程worker。"""
     pdf_path_str, pdf_dir_str, txt_dir_str, recursive, force, file_pattern = args
 
@@ -511,7 +508,9 @@ def _convert_only_worker(args: Tuple[str, str, Optional[str], bool, bool, str]) 
 
     if not _matches_file_pattern(pdf_path, file_pattern):
         target = _resolve_txt_path(pdf_path, pdf_dir, txt_dir, recursive)
-        return ConvertOnlyResult(status="skipped", pdf_path=pdf_path, txt_path=target, error="pattern mismatch")
+        return ConvertOnlyResult(
+            status="skipped", pdf_path=pdf_path, txt_path=target, error="pattern mismatch"
+        )
 
     target_txt_path = _resolve_txt_path(pdf_path, pdf_dir, txt_dir, recursive)
 
@@ -529,9 +528,13 @@ def _convert_only_worker(args: Tuple[str, str, Optional[str], bool, bool, str]) 
     except OSError as e:
         if getattr(e, "errno", None) == 28:
             raise
-        return ConvertOnlyResult(status="failed", pdf_path=pdf_path, txt_path=target_txt_path, error=str(e))
+        return ConvertOnlyResult(
+            status="failed", pdf_path=pdf_path, txt_path=target_txt_path, error=str(e)
+        )
     except Exception as e:
-        return ConvertOnlyResult(status="failed", pdf_path=pdf_path, txt_path=target_txt_path, error=str(e))
+        return ConvertOnlyResult(
+            status="failed", pdf_path=pdf_path, txt_path=target_txt_path, error=str(e)
+        )
 
     if not conversion.success:
         try:
@@ -604,8 +607,15 @@ class ConvertOnlyProcessor:
         worker_count = self.config.processes or min(cpu_count(), len(pdf_files))
         logging.info(f"使用 {worker_count} 个进程处理")
 
-        tasks: Iterable[Tuple[str, str, Optional[str], bool, bool, str]] = (
-            (str(p), str(pdf_dir), str(txt_dir) if txt_dir is not None else None, self.config.recursive, self.config.force, self.config.file_pattern)
+        tasks: Iterable[tuple[str, str, str | None, bool, bool, str]] = (
+            (
+                str(p),
+                str(pdf_dir),
+                str(txt_dir) if txt_dir is not None else None,
+                self.config.recursive,
+                self.config.force,
+                self.config.file_pattern,
+            )
             for p in pdf_files
         )
 
@@ -648,8 +658,7 @@ class ConvertOnlyProcessor:
         logging.info("=" * 60)
 
 
-
-def _process_task(args: Tuple) -> bool:
+def _process_task(args: tuple) -> bool:
     """多进程任务包装函数。"""
     converter, code, name, year, pdf_url = args
     return converter.process_single_file(code, name, year, pdf_url)
@@ -661,13 +670,13 @@ class AnnualReportProcessor:
     def __init__(
         self,
         config: ConverterConfig,
-        db_conn: Optional["duckdb.DuckDBPyConnection"] = None,
+        db_conn: duckdb.DuckDBPyConnection | None = None,
     ) -> None:
         self.config = config
         self.converter = PDFConverter(config)
         self.db_conn = db_conn  # 可选的数据库连接，用于 DuckDB 模式
 
-    def _load_excel_data(self) -> Optional[pd.DataFrame]:
+    def _load_excel_data(self) -> pd.DataFrame | None:
         """加载Excel数据。"""
         try:
             pd = _import_or_raise("pandas", "pip install -r requirements.txt")
@@ -680,12 +689,14 @@ class AnnualReportProcessor:
             return df
         except FileNotFoundError:
             logging.error(f"Excel文件不存在: {self.config.excel_file}")
-            logging.error("请检查 EXCEL_FILE 路径，或将 RUN_MODE 切换为 \"convert_only\" 使用本地PDF纯转换模式。")
+            logging.error(
+                '请检查 EXCEL_FILE 路径，或将 RUN_MODE 切换为 "convert_only" 使用本地PDF纯转换模式。'
+            )
             return None
         except Exception as e:
             logging.error(f"读取Excel失败: {e}")
             return None
-    
+
     def _prepare_directories(self) -> bool:
         """创建必要的目录。"""
         try:
@@ -696,19 +707,19 @@ class AnnualReportProcessor:
         except OSError as e:
             logging.error(f"创建目录失败: {e}")
             return False
-    
+
     def _filter_data_by_year(self, df: pd.DataFrame) -> pd.DataFrame:
         """按年份过滤数据。"""
-        required_columns = ['公司代码', '公司简称', '年份', '年报链接']
-        
+        required_columns = ["公司代码", "公司简称", "年份", "年报链接"]
+
         # 检查必需列
         missing_cols = [col for col in required_columns if col not in df.columns]
         if missing_cols:
             logging.error(f"Excel缺少必需列: {missing_cols}")
             return pd.DataFrame()
-        
+
         # 过滤年份
-        filtered = df[df['年份'].astype(str) == str(self.config.target_year)]
+        filtered = df[df["年份"].astype(str) == str(self.config.target_year)]
         logging.info(f"找到 {len(filtered)} 条 {self.config.target_year} 年的记录")
         return filtered
 
@@ -758,19 +769,19 @@ class AnnualReportProcessor:
                 download_status="failed",
                 download_error=error,
             )
-    
+
     def run(self) -> bool:
         """执行批量处理流程。
 
         Returns:
             是否完成了本轮处理（失败会返回 False）。
         """
-        logging.info("="*60)
+        logging.info("=" * 60)
         logging.info("年报批量下载转换程序启动")
         logging.info(f"目标年份: {self.config.target_year}")
         logging.info(f"删除PDF: {self.config.delete_pdf}")
         logging.info(f"数据源: {'DuckDB' if self.db_conn else 'Excel'}")
-        logging.info("="*60)
+        logging.info("=" * 60)
 
         # 准备目录
         if not self._prepare_directories():
@@ -786,7 +797,13 @@ class AnnualReportProcessor:
 
             # 转换为任务列表格式
             tasks = [
-                (self.converter, task['stock_code'], task.get('short_name') or '', task['year'], task['url'])
+                (
+                    self.converter,
+                    task["stock_code"],
+                    task.get("short_name") or "",
+                    task["year"],
+                    task["url"],
+                )
                 for task in db_tasks
             ]
         else:
@@ -801,7 +818,7 @@ class AnnualReportProcessor:
                 return True
 
             tasks = [
-                (self.converter, row['公司代码'], row['公司简称'], row['年份'], row['年报链接'])
+                (self.converter, row["公司代码"], row["公司简称"], row["年份"], row["年报链接"])
                 for _, row in filtered_df.iterrows()
             ]
 
@@ -818,7 +835,9 @@ class AnnualReportProcessor:
             if self.db_conn is not None:
                 for task, success in zip(tasks, results):
                     _, stock_code, short_name, year, _ = task
-                    base_name = self.converter._sanitize_filename(f"{int(stock_code):06}_{short_name}_{year}")
+                    base_name = self.converter._sanitize_filename(
+                        f"{int(stock_code):06}_{short_name}_{year}"
+                    )
                     pdf_path = os.path.join(self.config.pdf_dir, f"{base_name}.pdf")
                     txt_path = os.path.join(self.config.txt_dir, f"{base_name}.txt")
                     self._update_task_status_in_db(
@@ -831,9 +850,9 @@ class AnnualReportProcessor:
                     )
 
         # 输出统计
-        logging.info("="*60)
+        logging.info("=" * 60)
         logging.info(f"处理完成: 成功 {success_count}/{len(tasks)}")
-        logging.info("="*60)
+        logging.info("=" * 60)
         return True
 
 
@@ -859,13 +878,13 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "  python3 2.pdf_batch_converter.py convert-only --pdf-dir annual_reports/pdf --recursive\n"
             "\n"
             "  # 纯转换：输出到PDF同目录（将 --txt-dir 设为空字符串）\n"
-            "  python3 2.pdf_batch_converter.py convert-only --pdf-dir annual_reports/pdf --txt-dir \"\"\n"
+            '  python3 2.pdf_batch_converter.py convert-only --pdf-dir annual_reports/pdf --txt-dir ""\n'
             "\n"
             "  # 下载+转换：处理单一年份\n"
-            "  python3 2.pdf_batch_converter.py download --excel-file \"你的表.xlsx\" --year 2023\n"
+            '  python3 2.pdf_batch_converter.py download --excel-file "你的表.xlsx" --year 2023\n'
             "\n"
             "  # 下载+转换：批量年份\n"
-            "  python3 2.pdf_batch_converter.py download --excel-file \"你的表.xlsx\" --start-year 2022 --end-year 2024\n"
+            '  python3 2.pdf_batch_converter.py download --excel-file "你的表.xlsx" --start-year 2022 --end-year 2024\n'
             "\n"
             "  # 兼容旧用法：使用脚本底部配置区域\n"
             "  python3 2.pdf_batch_converter.py --use-config\n"
@@ -883,7 +902,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="使用 config.yaml 配置文件运行（推荐）。",
     )
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         default="config.yaml",
         help="指定 YAML 配置文件路径（默认 config.yaml，需配合 --use-yaml-config）。",
     )
@@ -897,9 +917,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     download = subparsers.add_parser("download", help="从Excel读取链接，下载PDF并转换为TXT。")
-    download.add_argument("--excel-file", help="Excel路径（需包含 公司代码/公司简称/年份/年报链接 列）。使用 --source excel 时必填。")
+    download.add_argument(
+        "--excel-file",
+        help="Excel路径（需包含 公司代码/公司简称/年份/年报链接 列）。使用 --source excel 时必填。",
+    )
     download.add_argument("--delete-pdf", action="store_true", help="转换后删除PDF（节省空间）。")
-    download.add_argument("--max-retries", type=int, default=3, help="下载失败最大重试次数（默认 3）。")
+    download.add_argument(
+        "--max-retries", type=int, default=3, help="下载失败最大重试次数（默认 3）。"
+    )
     download.add_argument("--timeout", type=int, default=15, help="HTTP超时秒数（默认 15）。")
     download.add_argument("--processes", type=int, default=None, help="并行进程数（默认自动）。")
 
@@ -935,14 +960,30 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="兼容模式：强制使用 Excel 数据源（等效 --source excel）。",
     )
 
-    convert_only = subparsers.add_parser("convert-only", help="对本地PDF目录执行批量转换，无需Excel。")
+    convert_only = subparsers.add_parser(
+        "convert-only", help="对本地PDF目录执行批量转换，无需Excel。"
+    )
     convert_only.add_argument("--pdf-dir", required=True, help="PDF源目录（相对路径以cwd为基准）。")
-    convert_only.add_argument("--txt-dir", default="outputs/annual_reports/txt", help="TXT输出目录（默认 outputs/annual_reports/txt；设为 empty 表示同目录）。")
+    convert_only.add_argument(
+        "--txt-dir",
+        default="outputs/annual_reports/txt",
+        help="TXT输出目录（默认 outputs/annual_reports/txt；设为 empty 表示同目录）。",
+    )
     convert_only.add_argument("--recursive", action="store_true", help="递归扫描子目录。")
-    convert_only.add_argument("--force", action="store_true", help="强制覆盖（忽略已存在有效TXT）。")
-    convert_only.add_argument("--delete-pdf", action="store_true", help="转换成功后删除源PDF（安全策略见文档）。")
-    convert_only.add_argument("--processes", type=int, default=None, help="并行进程数（默认自动）。")
-    convert_only.add_argument("--file-pattern", default="*.pdf", help="文件名匹配模式（默认 *.pdf，大小写不敏感识别.pdf/.PDF）。")
+    convert_only.add_argument(
+        "--force", action="store_true", help="强制覆盖（忽略已存在有效TXT）。"
+    )
+    convert_only.add_argument(
+        "--delete-pdf", action="store_true", help="转换成功后删除源PDF（安全策略见文档）。"
+    )
+    convert_only.add_argument(
+        "--processes", type=int, default=None, help="并行进程数（默认自动）。"
+    )
+    convert_only.add_argument(
+        "--file-pattern",
+        default="*.pdf",
+        help="文件名匹配模式（默认 *.pdf，大小写不敏感识别.pdf/.PDF）。",
+    )
 
     return parser
 
@@ -969,6 +1010,7 @@ def _run_download_from_args(args: argparse.Namespace) -> None:
 
     if use_duckdb:
         from annual_report_mda.db import init_db
+
         db_conn = init_db(args.db_path)
         logging.info(f"使用 DuckDB 数据源: {args.db_path}")
 
@@ -994,7 +1036,7 @@ def _run_download_from_args(args: argparse.Namespace) -> None:
 
 
 def _run_convert_only_from_args(args: argparse.Namespace) -> None:
-    txt_dir: Optional[str]
+    txt_dir: str | None
     if args.txt_dir.strip() == "":
         txt_dir = None
     else:
@@ -1019,7 +1061,6 @@ def _run_with_yaml_config(args: argparse.Namespace) -> None:
     try:
         from annual_report_mda.config_manager import (
             load_config,
-            apply_cli_overrides,
             log_config_summary,
         )
     except ImportError as e:
@@ -1050,6 +1091,7 @@ def _run_with_yaml_config(args: argparse.Namespace) -> None:
 
     if use_duckdb:
         from annual_report_mda.db import init_db
+
         db_path = config.project.db_path or "data/annual_reports.duckdb"
         db_conn = init_db(db_path)
         logging.info(f"使用 DuckDB 数据源: {db_path}")
@@ -1138,13 +1180,13 @@ def _run_with_embedded_config() -> None:
         for year in range(START_YEAR, END_YEAR + 1):
             config = ConverterConfig(
                 excel_file=EXCEL_FILE,
-                pdf_dir=f'年报文件/{year}/pdf年报',
-                txt_dir=f'年报文件/{year}/txt年报',
+                pdf_dir=f"年报文件/{year}/pdf年报",
+                txt_dir=f"年报文件/{year}/txt年报",
                 target_year=year,
                 delete_pdf=DELETE_PDF,
                 max_retries=MAX_RETRIES,
                 timeout=TIMEOUT,
-                processes=PROCESSES
+                processes=PROCESSES,
             )
 
             processor = AnnualReportProcessor(config)
@@ -1157,13 +1199,13 @@ def _run_with_embedded_config() -> None:
         # 处理单独年份
         config = ConverterConfig(
             excel_file=EXCEL_FILE,
-            pdf_dir=f'年报文件/{SINGLE_YEAR}/pdf年报',
-            txt_dir=f'年报文件/{SINGLE_YEAR}/txt年报',
+            pdf_dir=f"年报文件/{SINGLE_YEAR}/pdf年报",
+            txt_dir=f"年报文件/{SINGLE_YEAR}/txt年报",
             target_year=SINGLE_YEAR,
             delete_pdf=DELETE_PDF,
             max_retries=MAX_RETRIES,
             timeout=TIMEOUT,
-            processes=PROCESSES
+            processes=PROCESSES,
         )
 
         processor = AnnualReportProcessor(config)
@@ -1202,5 +1244,5 @@ def main(argv: list[str]) -> None:
     raise SystemExit(2)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main(sys.argv)

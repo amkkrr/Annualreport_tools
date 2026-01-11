@@ -8,11 +8,11 @@
     M2-05: 低分标记 - needs_review = true when score < 60
     M2-06: 负向检测 - 表格残留等扣分
 """
+
 from __future__ import annotations
 
 import json
 import tempfile
-from datetime import date
 from pathlib import Path
 
 import pytest
@@ -45,7 +45,7 @@ class TestM2_01_FullPipelineStatusUpdates:
 
     def test_status_default_values(self, temp_db):
         """验证状态默认值为 pending"""
-        from annual_report_mda.db import insert_report, get_report
+        from annual_report_mda.db import get_report, insert_report
 
         insert_report(
             temp_db,
@@ -61,7 +61,7 @@ class TestM2_01_FullPipelineStatusUpdates:
 
     def test_status_updates_correctly(self, temp_db):
         """验证状态更新正确"""
-        from annual_report_mda.db import insert_report, update_report_status, get_report
+        from annual_report_mda.db import get_report, insert_report, update_report_status
 
         insert_report(
             temp_db,
@@ -105,7 +105,11 @@ class TestM2_02_ResumeFromInterruption:
 
     def test_incremental_skip_already_processed(self, temp_db):
         """验证已处理的记录被跳过"""
-        from annual_report_mda.data_manager import should_skip_incremental, upsert_mda_text, MDAUpsertRecord
+        from annual_report_mda.data_manager import (
+            MDAUpsertRecord,
+            should_skip_incremental,
+            upsert_mda_text,
+        )
 
         # 插入一条已处理的记录（char_count >= 500 才算成功处理）
         mda_text = "测试文本内容" * 100  # 600 字符
@@ -149,7 +153,11 @@ class TestM2_02_ResumeFromInterruption:
 
     def test_incremental_reprocess_changed_file(self, temp_db):
         """验证修改后的文件被重新处理"""
-        from annual_report_mda.data_manager import should_skip_incremental, upsert_mda_text, MDAUpsertRecord
+        from annual_report_mda.data_manager import (
+            MDAUpsertRecord,
+            should_skip_incremental,
+            upsert_mda_text,
+        )
 
         # 插入一条记录
         record = MDAUpsertRecord(
@@ -215,9 +223,11 @@ class TestM2_03_GoldenSetEvaluation:
     def test_evaluation_script_importable(self):
         """验证评估脚本可导入"""
         import sys
+
         sys.path.insert(0, "scripts")
         try:
             from evaluate_extraction import evaluate_single, run_evaluation
+
             assert callable(evaluate_single)
             assert callable(run_evaluation)
         finally:
@@ -236,18 +246,20 @@ class TestM2_04_QualityScorePopulated:
 
     def test_quality_score_range(self, temp_db):
         """验证评分范围为 0-100"""
-        from annual_report_mda.scorer import calculate_quality_score, ScoreDetail
+        from annual_report_mda.scorer import ScoreDetail, calculate_quality_score
 
         # 高质量文本
         high_quality = "公司主营业务收入同比增长，毛利率保持稳定，现金流充裕。" * 100
-        score_detail = ScoreDetail(keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(high_quality))
+        score_detail = ScoreDetail(
+            keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(high_quality)
+        )
         result = calculate_quality_score(high_quality, quality_flags=[], score_detail=score_detail)
 
         assert 0 <= result.score <= 100
 
     def test_quality_score_stored_in_db(self, temp_db):
         """验证评分可以正确存储到数据库"""
-        from annual_report_mda.data_manager import upsert_mda_text, MDAUpsertRecord
+        from annual_report_mda.data_manager import MDAUpsertRecord, upsert_mda_text
 
         record = MDAUpsertRecord(
             stock_code="600519",
@@ -298,10 +310,12 @@ class TestM2_05_LowScoreNeedsReview:
 
     def test_high_score_no_review(self):
         """验证高分不需要审核"""
-        from annual_report_mda.scorer import calculate_quality_score, ScoreDetail
+        from annual_report_mda.scorer import ScoreDetail, calculate_quality_score
 
         text = "公司主营业务收入同比增长，毛利率保持稳定，现金流充裕。" * 100
-        score_detail = ScoreDetail(keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(text))
+        score_detail = ScoreDetail(
+            keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(text)
+        )
         result = calculate_quality_score(text, quality_flags=[], score_detail=score_detail)
 
         assert result.score >= 60
@@ -309,7 +323,7 @@ class TestM2_05_LowScoreNeedsReview:
 
     def test_needs_review_stored_in_db(self, temp_db):
         """验证 needs_review 可以正确存储到数据库"""
-        from annual_report_mda.data_manager import upsert_mda_text, MDAUpsertRecord
+        from annual_report_mda.data_manager import MDAUpsertRecord, upsert_mda_text
 
         # 低分记录
         record = MDAUpsertRecord(
@@ -390,29 +404,38 @@ class TestM2_06_NegativeFeatureDetection:
 
     def test_negative_features_reduce_score(self):
         """验证负向特征降低评分"""
-        from annual_report_mda.scorer import calculate_quality_score, ScoreDetail
+        from annual_report_mda.scorer import ScoreDetail, calculate_quality_score
 
         # 含表格残留的文本
-        text_with_issues = """
+        text_with_issues = (
+            """
         业绩说明
         123.45
         678.90
         234.56
         其他信息正文内容
-        """ * 20
+        """
+            * 20
+        )
 
-        score_detail = ScoreDetail(keyword_hit_count=3, keyword_total=7, dots_count=0, length=len(text_with_issues))
-        result = calculate_quality_score(text_with_issues, quality_flags=[], score_detail=score_detail)
+        score_detail = ScoreDetail(
+            keyword_hit_count=3, keyword_total=7, dots_count=0, length=len(text_with_issues)
+        )
+        result = calculate_quality_score(
+            text_with_issues, quality_flags=[], score_detail=score_detail
+        )
 
         assert "table_residue" in result.penalties
         assert result.penalties["table_residue"] == 15
 
     def test_penalties_recorded_in_quality_detail(self, temp_db):
         """验证扣分明细记录在 quality_detail 中"""
-        from annual_report_mda.scorer import calculate_quality_score, ScoreDetail
+        from annual_report_mda.scorer import ScoreDetail, calculate_quality_score
 
         text = "目录" + "......" * 50 + "正文"
-        score_detail = ScoreDetail(keyword_hit_count=0, keyword_total=7, dots_count=50, length=len(text))
+        score_detail = ScoreDetail(
+            keyword_hit_count=0, keyword_total=7, dots_count=50, length=len(text)
+        )
         result = calculate_quality_score(text, quality_flags=[], score_detail=score_detail)
 
         assert "dots_excess" in result.penalties
@@ -434,10 +457,13 @@ class TestM2_Q2_ExtractionPerformance:
     def test_scorer_performance(self):
         """验证评分器性能"""
         import time
-        from annual_report_mda.scorer import calculate_quality_score, ScoreDetail
+
+        from annual_report_mda.scorer import ScoreDetail, calculate_quality_score
 
         text = "公司主营业务收入同比增长，毛利率保持稳定。" * 1000
-        score_detail = ScoreDetail(keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(text))
+        score_detail = ScoreDetail(
+            keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(text)
+        )
 
         start = time.time()
         for _ in range(100):
@@ -453,10 +479,12 @@ class TestM2_Q3_ScoringConsistency:
 
     def test_same_text_same_score(self):
         """验证相同文本多次评分结果一致"""
-        from annual_report_mda.scorer import calculate_quality_score, ScoreDetail
+        from annual_report_mda.scorer import ScoreDetail, calculate_quality_score
 
         text = "公司主营业务收入同比增长，毛利率保持稳定，现金流充裕。" * 50
-        score_detail = ScoreDetail(keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(text))
+        score_detail = ScoreDetail(
+            keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(text)
+        )
 
         scores = []
         for _ in range(10):

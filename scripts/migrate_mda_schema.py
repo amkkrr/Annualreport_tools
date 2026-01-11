@@ -12,6 +12,7 @@ M2 验收 - Schema 迁移脚本
 用法:
     python scripts/migrate_mda_schema.py [--dry-run] [--db PATH]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,10 +20,7 @@ import logging
 import sys
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 _LOG = logging.getLogger(__name__)
 
 
@@ -79,7 +77,12 @@ def migrate_schema(db_path: str, dry_run: bool = False) -> dict:
             except Exception as e:
                 _LOG.error(f"添加列失败 {col_name}: {e}")
                 conn.close()
-                return {"added_columns": added, "skipped_columns": skipped, "success": False, "error": str(e)}
+                return {
+                    "added_columns": added,
+                    "skipped_columns": skipped,
+                    "success": False,
+                    "error": str(e),
+                }
 
     conn.close()
 
@@ -114,18 +117,10 @@ def main():
     parser.add_argument(
         "--db",
         default="data/annual_reports.duckdb",
-        help="DuckDB 数据库路径 (默认 data/annual_reports.duckdb)"
+        help="DuckDB 数据库路径 (默认 data/annual_reports.duckdb)",
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="仅打印将执行的操作，不实际修改"
-    )
-    parser.add_argument(
-        "--verify",
-        action="store_true",
-        help="仅验证迁移是否完成"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="仅打印将执行的操作，不实际修改")
+    parser.add_argument("--verify", action="store_true", help="仅验证迁移是否完成")
 
     args = parser.parse_args()
 

@@ -13,23 +13,23 @@ graph TD
     subgraph S2 [第二阶段：文档获取与清洗]
         LinkExcel -->|读取链接| Downloader[2.pdf_batch_converter.py]
         LocalPDF[本地 PDF 目录] -->|纯转换模式| Downloader
-        
+
         Downloader -->|多进程下载| RawPDF[PDF 文件]
         RawPDF -->|完整性校验| Validator{校验成功?}
         Validator -->|No| Retry[重试下载]
         Validator -->|Yes| Converter[PDF 转 TXT 引擎]
-        
+
         Converter -->|首选| Backend1[pdfplumber]
         Backend1 -->|失败| Backend2[PyPDF2]
         Backend2 -->|失败| Backend3[pdfminer]
-        
+
         Backend1 & Backend2 & Backend3 --> RawTXT[TXT 文本文件]
     end
 
     subgraph S3 [第三阶段：数据分析]
         RawTXT -->|输入| Analyzer[3.text_analysis.py]
         UnivAnalyzer[text_analysis_universal.py] -->|输入| RawTXT
-        
+
         Dict[jieba 自定义词典] -.->|注入关键词| Analyzer
         Analyzer -->|多进程分词统计| ResultExcel[词频统计结果.xls]
     end

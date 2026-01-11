@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Union
 
 from .utils import ensure_parent_dir, utc_now
 
 
-def init_db(db_path: Union[str, Path]) -> "duckdb.DuckDBPyConnection":
+def init_db(db_path: str | Path) -> duckdb.DuckDBPyConnection:
     """
     初始化 DuckDB（建表/建视图），并返回连接对象。
     """
@@ -23,7 +22,7 @@ def init_db(db_path: Union[str, Path]) -> "duckdb.DuckDBPyConnection":
     return conn
 
 
-def _create_tables(conn: "duckdb.DuckDBPyConnection") -> None:
+def _create_tables(conn: duckdb.DuckDBPyConnection) -> None:
     # === 公司基本信息表 ===
     conn.execute(
         """
@@ -198,7 +197,7 @@ def _create_tables(conn: "duckdb.DuckDBPyConnection") -> None:
     )
 
 
-def _create_views(conn: "duckdb.DuckDBPyConnection") -> None:
+def _create_views(conn: duckdb.DuckDBPyConnection) -> None:
     # === MDA 最新记录视图 ===
     conn.execute(
         """
@@ -277,7 +276,7 @@ def _create_views(conn: "duckdb.DuckDBPyConnection") -> None:
 
 
 def insert_extraction_error(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     stock_code: str | None,
     year: int | None,
@@ -326,7 +325,7 @@ def insert_extraction_error(
 
 
 def upsert_company(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     stock_code: str,
     short_name: str,
@@ -354,7 +353,7 @@ def upsert_company(
 
 
 def get_company(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     stock_code: str,
 ) -> dict | None:
     """获取公司信息。"""
@@ -374,7 +373,7 @@ def get_company(
 
 
 def insert_report(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     stock_code: str,
     year: int,
@@ -405,7 +404,7 @@ def insert_report(
 
 
 def update_report_status(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     stock_code: str,
     year: int,
@@ -480,7 +479,7 @@ def update_report_status(
 
 
 def get_pending_downloads(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     year: int | None = None,
     limit: int | None = None,
@@ -510,7 +509,7 @@ def get_pending_downloads(
 
 
 def get_pending_converts(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     year: int | None = None,
     limit: int | None = None,
@@ -540,7 +539,7 @@ def get_pending_converts(
 
 
 def report_exists(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     stock_code: str,
     year: int,
 ) -> bool:
@@ -553,7 +552,7 @@ def report_exists(
 
 
 def get_report(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     stock_code: str,
     year: int,
 ) -> dict | None:
@@ -574,7 +573,7 @@ def get_report(
 
 
 def insert_llm_call_log(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     stock_code: str | None,
     year: int | None,
@@ -614,7 +613,7 @@ def insert_llm_call_log(
 
 
 def upsert_strategy_stats(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     strategy: str,
     success: bool,
 ) -> None:
@@ -639,7 +638,7 @@ def upsert_strategy_stats(
 
 
 def get_strategy_stats(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
 ) -> dict[str, dict]:
     """获取策略统计。"""
     result = conn.execute("SELECT * FROM strategy_stats").fetchall()
@@ -658,7 +657,7 @@ def get_strategy_stats(
 
 
 def upsert_extraction_rule(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     stock_code: str,
     year: int,

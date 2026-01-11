@@ -8,10 +8,10 @@
 - FailurePatterns: 失败模式学习
 """
 
-from .self_refine import SelfRefineLoop, RefineResult
-from .few_shot import FewShotStore, FewShotSample
+from .failure_patterns import FailurePattern, FailurePatternStore
+from .few_shot import FewShotSample, FewShotStore
+from .self_refine import RefineResult, SelfRefineLoop
 from .strategy_weights import StrategyWeights
-from .failure_patterns import FailurePatternStore, FailurePattern
 
 __all__ = [
     "SelfRefineLoop",

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
 
 from .utils import utc_now
-
 
 SUCCESS_CHAR_COUNT_MIN = 500
 
@@ -26,43 +26,43 @@ class MDAUpsertRecord:
     stock_code: str
     year: int
 
-    mda_raw: Optional[str]
-    char_count: Optional[int]
+    mda_raw: str | None
+    char_count: int | None
 
-    page_index_start: Optional[int]
-    page_index_end: Optional[int]
-    page_count: Optional[int]
+    page_index_start: int | None
+    page_index_end: int | None
+    page_count: int | None
 
-    printed_page_start: Optional[int] = None
-    printed_page_end: Optional[int] = None
+    printed_page_start: int | None = None
+    printed_page_end: int | None = None
 
-    hit_start: Optional[str] = None
-    hit_end: Optional[str] = None
+    hit_start: str | None = None
+    hit_end: str | None = None
 
-    is_truncated: Optional[bool] = None
-    truncation_reason: Optional[str] = None
+    is_truncated: bool | None = None
+    truncation_reason: str | None = None
 
-    quality_flags: Optional[Sequence[str]] = None
-    quality_detail: Optional[dict[str, Any]] = None
+    quality_flags: Sequence[str] | None = None
+    quality_detail: dict[str, Any] | None = None
 
     source_path: str = ""
     source_sha256: str = ""
 
     extractor_version: str = ""
-    used_rule_type: Optional[str] = None
+    used_rule_type: str | None = None
     extracted_at: datetime = field(default_factory=utc_now)
 
     # 字段切分结果
-    mda_review: Optional[str] = None
-    mda_outlook: Optional[str] = None
-    outlook_split_position: Optional[int] = None
+    mda_review: str | None = None
+    mda_outlook: str | None = None
+    outlook_split_position: int | None = None
 
     # 综合质量评分
-    quality_score: Optional[int] = None
+    quality_score: int | None = None
     needs_review: bool = False
 
 
-def is_successful_record(mda_raw: Optional[str], char_count: Optional[int]) -> bool:
+def is_successful_record(mda_raw: str | None, char_count: int | None) -> bool:
     if mda_raw is None:
         return False
     if char_count is None:
@@ -71,7 +71,7 @@ def is_successful_record(mda_raw: Optional[str], char_count: Optional[int]) -> b
 
 
 def should_skip_incremental(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     stock_code: str,
     year: int,
@@ -99,9 +99,17 @@ def should_skip_incremental(
     return int(char_count) >= min_char_count
 
 
-def upsert_mda_text(conn: "duckdb.DuckDBPyConnection", record: MDAUpsertRecord) -> None:
-    quality_flags_json = json.dumps(list(record.quality_flags), ensure_ascii=False) if record.quality_flags is not None else None
-    quality_detail_json = json.dumps(record.quality_detail, ensure_ascii=False) if record.quality_detail is not None else None
+def upsert_mda_text(conn: duckdb.DuckDBPyConnection, record: MDAUpsertRecord) -> None:
+    quality_flags_json = (
+        json.dumps(list(record.quality_flags), ensure_ascii=False)
+        if record.quality_flags is not None
+        else None
+    )
+    quality_detail_json = (
+        json.dumps(record.quality_detail, ensure_ascii=False)
+        if record.quality_detail is not None
+        else None
+    )
 
     conn.execute(
         """
@@ -188,11 +196,11 @@ def upsert_mda_text(conn: "duckdb.DuckDBPyConnection", record: MDAUpsertRecord) 
 
 
 def get_extraction_rule(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     stock_code: str,
     year: int,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     row = conn.execute(
         """
         SELECT report_signature, start_pattern, end_pattern, rule_source, updated_at
@@ -217,15 +225,15 @@ def get_extraction_rule(
 
 
 def upsert_extraction_rule(
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     *,
     stock_code: str,
     year: int,
     start_pattern: str,
     end_pattern: str,
     rule_source: str,
-    report_signature: Optional[str] = None,
-    updated_at: Optional[datetime] = None,
+    report_signature: str | None = None,
+    updated_at: datetime | None = None,
 ) -> None:
     if updated_at is None:
         updated_at = __import__("annual_report_mda.utils", fromlist=["utc_now"]).utc_now()

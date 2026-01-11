@@ -2,12 +2,11 @@
 
 将 MD&A 文本切分为"经营回顾"和"未来展望"两个子字段。
 """
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
-
 
 # 未来展望类关键词（按优先级排序）
 OUTLOOK_PATTERNS: list[str] = [
@@ -32,9 +31,9 @@ class MdaSections:
     """MD&A 切分结果。"""
 
     review: str  # 经营回顾部分
-    outlook: Optional[str]  # 未来展望部分（可能为空）
-    split_keyword: Optional[str]  # 触发切分的关键词
-    split_position: Optional[int]  # 切分位置（字符偏移）
+    outlook: str | None  # 未来展望部分（可能为空）
+    split_keyword: str | None  # 触发切分的关键词
+    split_position: int | None  # 切分位置（字符偏移）
 
 
 def split_mda_sections(mda_text: str) -> MdaSections:
@@ -55,7 +54,7 @@ def split_mda_sections(mda_text: str) -> MdaSections:
             split_position=None,
         )
 
-    best_match: Optional[re.Match] = None
+    best_match: re.Match | None = None
     best_pattern_idx = len(OUTLOOK_PATTERNS)  # 用于优先级比较
 
     # 逐行搜索，匹配标题行

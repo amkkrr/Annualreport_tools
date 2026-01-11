@@ -3,8 +3,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
 
 _PAGE_MARKER_RE = re.compile(r"^\s*(?:=+|-+)\s*Page\s*(\d+)\s*(?:=+|-+)\s*$", re.IGNORECASE)
 
@@ -12,7 +10,7 @@ _PAGE_MARKER_RE = re.compile(r"^\s*(?:=+|-+)\s*Page\s*(\d+)\s*(?:=+|-+)\s*$", re
 @dataclass(frozen=True)
 class TextLoadResult:
     pages: list[str]
-    page_numbers: list[Optional[int]]
+    page_numbers: list[int | None]
     had_page_breaks: bool
     page_break_kind: str  # "form_feed" | "page_marker" | "none"
     encoding_used: str
@@ -54,10 +52,10 @@ def split_pages(text: str) -> TextLoadResult:
 
     lines = text.split("\n")
     pages: list[str] = []
-    page_numbers: list[Optional[int]] = []
+    page_numbers: list[int | None] = []
 
     current: list[str] = []
-    current_page_number: Optional[int] = None
+    current_page_number: int | None = None
     saw_marker = False
 
     for line in lines:

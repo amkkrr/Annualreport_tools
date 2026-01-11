@@ -1,35 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
-'''
+"""
 @Project ：PycharmProjects
 @File    ：巨潮资讯年报2.0.py
 @IDE     ：PyCharm
 @Author  ：lingxiaotian
 @Date    ：2023/5/20 12:38
 @LastEditTime: 2025/11/21 14:18
-'''
+"""
 
 from __future__ import annotations
 
 import argparse
 import logging
-import os
 import re
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any
 
 import openpyxl
 import requests
 
 # 日志配置
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 GZH = "【公众号：凌小添】"
 
@@ -37,8 +33,9 @@ GZH = "【公众号：凌小添】"
 @dataclass(frozen=True)
 class CrawlerConfig:
     """爬虫配置类。"""
+
     target_year: int  # 目标年份
-    exclude_keywords: List[str]  # 排除关键词列表
+    exclude_keywords: list[str]  # 排除关键词列表
     trade: str = ""  # 行业过滤
     plate: str = "sz;sh"  # 板块控制
     max_retries: int = 3  # 最大重试次数
@@ -51,9 +48,9 @@ class CrawlerConfig:
 
 class CNINFOClient:
     """巨潮资讯API客户端。"""
-    
+
     BASE_URL = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
-    
+
     HEADERS = {
         "Accept": "*/*",
         "Accept-Encoding": "gzip, deflate",
@@ -63,15 +60,15 @@ class CNINFOClient:
         "Origin": "http://www.cninfo.com.cn",
         "Referer": "http://www.cninfo.com.cn/new/commonUrl/pageOfSearch?url=disclosure/list/search&checkedCategory=category_ndbg_szsh",
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
-        "X-Requested-With": "XMLHttpRequest"
+        "X-Requested-With": "XMLHttpRequest",
     }
-    
+
     def __init__(self, config: CrawlerConfig) -> None:
         self.config = config
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
-    
-    def _build_request_data(self, page_num: int, date_range: str) -> Dict[str, Any]:
+
+    def _build_request_data(self, page_num: int, date_range: str) -> dict[str, Any]:
         """构建请求数据。"""
         return {
             "pageNum": page_num,
@@ -86,70 +83,70 @@ class CNINFOClient:
             "seDate": date_range,
             "sortName": "code",
             "sortType": "asc",
-            "isHLtitle": "false"
+            "isHLtitle": "false",
         }
-    
-    def fetch_page(self, page_num: int, date_range: str) -> Optional[Dict[str, Any]]:
+
+    def fetch_page(self, page_num: int, date_range: str) -> dict[str, Any] | None:
         """获取单页数据。
-        
+
         Args:
             page_num: 页码
             date_range: 日期范围，格式：YYYY-MM-DD~YYYY-MM-DD
-            
+
         Returns:
             API响应数据，失败返回None
         """
         data = self._build_request_data(page_num, date_range)
-        
+
         for attempt in range(1, self.config.max_retries + 1):
             try:
-                response = self.session.post(
-                    self.BASE_URL,
-                    data=data,
-                    timeout=self.config.timeout
-                )
+                response = self.session.post(self.BASE_URL, data=data, timeout=self.config.timeout)
                 response.raise_for_status()
                 return response.json()
-                
+
             except requests.exceptions.Timeout:
-                logging.warning(f"请求超时 (尝试 {attempt}/{self.config.max_retries}): {date_range} 第{page_num}页")
+                logging.warning(
+                    f"请求超时 (尝试 {attempt}/{self.config.max_retries}): {date_range} 第{page_num}页"
+                )
             except requests.exceptions.RequestException as e:
                 logging.warning(f"网络请求错误 (尝试 {attempt}/{self.config.max_retries}): {e}")
             except ValueError as e:
                 logging.warning(f"JSON解析失败 (尝试 {attempt}/{self.config.max_retries}): {e}")
-            
+
             if attempt < self.config.max_retries:
                 time.sleep(self.config.retry_delay)
-        
-        logging.error(f"获取数据失败（已重试{self.config.max_retries}次）: {date_range} 第{page_num}页")
+
+        logging.error(
+            f"获取数据失败（已重试{self.config.max_retries}次）: {date_range} 第{page_num}页"
+        )
         return None
-    
-    def fetch_all_pages(self, date_range: str) -> List[Dict[str, Any]]:
+
+    def fetch_all_pages(self, date_range: str) -> list[dict[str, Any]]:
         """获取指定日期范围的所有页面数据。
-        
+
         Args:
             date_range: 日期范围
-            
+
         Returns:
             所有公告数据列表
         """
         all_results = []
-        
+
         # 先获取第一页，确定总页数
         first_page_data = self.fetch_page(1, date_range)
         if not first_page_data:
             return all_results
-        
+
         total_pages = first_page_data.get("totalpages", 0)
         if total_pages == 0:
             logging.info(f"日期范围 {date_range} 无数据")
             return all_results
-        
+
         # 处理第一页数据
         announcements = first_page_data.get("announcements")
         if announcements:
             all_results.extend(announcements)
-        
+
         # 获取剩余页面
         for page_num in range(2, total_pages + 1):
             page_data = self.fetch_page(page_num, date_range)
@@ -157,11 +154,15 @@ class CNINFOClient:
                 announcements = page_data.get("announcements")
                 if announcements:
                     all_results.extend(announcements)
-            
+
             # 显示进度
             progress = (page_num / total_pages) * 100
-            print(f"\r日期 {date_range}: {page_num}/{total_pages} 页 ({progress:.1f}%)", end='', flush=True)
-        
+            print(
+                f"\r日期 {date_range}: {page_num}/{total_pages} 页 ({progress:.1f}%)",
+                end="",
+                flush=True,
+            )
+
         print()  # 换行
         logging.info(f"日期范围 {date_range} 完成，共获取 {len(all_results)} 条记录")
         return all_results
@@ -169,36 +170,36 @@ class CNINFOClient:
 
 class DateRangeGenerator:
     """日期范围生成器。"""
-    
+
     @staticmethod
-    def generate_daily_ranges(year: int) -> List[str]:
+    def generate_daily_ranges(year: int) -> list[str]:
         """生成指定年份每一天的日期范围。
-        
+
         Args:
             year: 年份
-            
+
         Returns:
             日期范围列表，格式：["YYYY-MM-DD~YYYY-MM-DD", ...]
         """
         ranges = []
         start_date = datetime(year, 1, 1)
         end_date = datetime(year, 12, 31)
-        
+
         current_date = start_date
         while current_date <= end_date:
             date_str = current_date.strftime("%Y-%m-%d")
             ranges.append(f"{date_str}~{date_str}")
             current_date += timedelta(days=1)
-        
+
         return ranges
-    
+
     @staticmethod
-    def generate_monthly_ranges(year: int) -> List[str]:
+    def generate_monthly_ranges(year: int) -> list[str]:
         """生成指定年份每个月的日期范围（备用方案）。
-        
+
         Args:
             year: 年份
-            
+
         Returns:
             日期范围列表
         """
@@ -210,12 +211,12 @@ class DateRangeGenerator:
             else:
                 next_month = month + 1
                 next_year = year
-            
+
             start_date = datetime(year, month, 1)
             end_date = datetime(next_year, next_month, 1) - timedelta(days=1)
-            
+
             ranges.append(f"{start_date.strftime('%Y-%m-%d')}~{end_date.strftime('%Y-%m-%d')}")
-        
+
         return ranges
 
 
@@ -225,29 +226,29 @@ class AnnualReportCrawler:
     def __init__(
         self,
         config: CrawlerConfig,
-        db_conn: Optional["duckdb.DuckDBPyConnection"] = None,
+        db_conn: duckdb.DuckDBPyConnection | None = None,
     ) -> None:
         self.config = config
         self.client = CNINFOClient(config)
         self.db_conn = db_conn  # 可选的数据库连接，用于 DuckDB 模式
-    
+
     def _clean_title(self, title: str) -> str:
         """清理标题。"""
         title = title.strip()
         title = re.sub(r"<.*?>", "", title)  # 移除HTML标签
         title = title.replace("：", "")
         return f"《{title}》"
-    
+
     def _should_exclude(self, title: str) -> bool:
         """判断是否应该排除该标题。"""
         for keyword in self.config.exclude_keywords:
             if keyword in title:
                 return True
         return False
-    
-    def _parse_announcement(self, item: Dict[str, Any]) -> Optional[Dict[str, str]]:
+
+    def _parse_announcement(self, item: dict[str, Any]) -> dict[str, str] | None:
         """解析单条公告数据。
-        
+
         Returns:
             解析后的数据字典，如果应该排除则返回None
         """
@@ -255,67 +256,71 @@ class AnnualReportCrawler:
             company_code = item["secCode"]
             company_name = item["secName"]
             title = self._clean_title(item["announcementTitle"])
-            
+
             # 检查是否排除
             if self._should_exclude(title):
                 return None
-            
+
             # 提取年份
             year_match = re.search(r"(\d{4})年", title)
             if year_match:
                 year = year_match.group(1)
             else:
                 year = str(self.config.target_year)
-            
+
             # 严格年份检查：标题中的年份必须与目标年份一致
             if self.config.strict_year_check:
                 if year != str(self.config.target_year):
-                    logging.debug(f"年份不匹配，跳过: {title} (期望{self.config.target_year}年，实际{year}年)")
+                    logging.debug(
+                        f"年份不匹配，跳过: {title} (期望{self.config.target_year}年，实际{year}年)"
+                    )
                     return None
-            
+
             # 构建完整URL
             adjunct_url = item["adjunctUrl"]
             announcement_url = f"http://static.cninfo.com.cn/{adjunct_url}"
-            
+
             return {
                 "company_code": company_code,
                 "company_name": company_name,
                 "title": title,
                 "year": year,
-                "url": announcement_url
+                "url": announcement_url,
             }
         except (KeyError, AttributeError) as e:
             logging.warning(f"解析公告数据失败: {e}")
             return None
-    
-    def _save_to_excel(self, data: List[Dict[str, str]], output_path: str) -> None:
+
+    def _save_to_excel(self, data: list[dict[str, str]], output_path: str) -> None:
         """保存数据到Excel。"""
         workbook = openpyxl.Workbook()
         worksheet = workbook.active
         worksheet.title = "公众号 凌小添"
-        
+
         # 写入表头
         worksheet.append(["公司代码", "公司简称", "标题", "年份", "年报链接"])
-        
+
         # 写入数据
         for item in data:
-            worksheet.append([
-                item["company_code"],
-                item["company_name"],
-                item["title"],
-                item["year"],
-                item["url"]
-            ])
-        
+            worksheet.append(
+                [
+                    item["company_code"],
+                    item["company_name"],
+                    item["title"],
+                    item["year"],
+                    item["url"],
+                ]
+            )
+
         workbook.save(output_path)
         logging.info(f"Excel文件保存成功: {output_path}")
 
-    def _save_to_duckdb(self, data: List[Dict[str, str]]) -> tuple:
+    def _save_to_duckdb(self, data: list[dict[str, str]]) -> tuple:
         """保存数据到 DuckDB。返回 (新增数, 跳过数)。"""
         if self.db_conn is None:
             raise RuntimeError("未提供数据库连接")
 
-        from annual_report_mda.db import upsert_company, insert_report
+        from annual_report_mda.db import insert_report, upsert_company
 
         new_count = 0
         skip_count = 0
@@ -344,10 +349,10 @@ class AnnualReportCrawler:
                 skip_count += 1
 
         return new_count, skip_count
-    
+
     def run(self) -> None:
         """执行爬取任务。"""
-        logging.info("="*60)
+        logging.info("=" * 60)
         logging.info("巨潮资讯年报爬虫启动")
         logging.info(f"目标年份: {self.config.target_year}")
         logging.info(f"板块: {self.config.plate}")
@@ -355,26 +360,26 @@ class AnnualReportCrawler:
         logging.info(f"排除关键词: {', '.join(self.config.exclude_keywords)}")
         logging.info(f"增量保存间隔: 每{self.config.save_interval}条")
         logging.info(f"严格年份检查: {'开启' if self.config.strict_year_check else '关闭'}")
-        logging.info("="*60)
-        
+        logging.info("=" * 60)
+
         # 生成日期范围（按天）
         date_ranges = DateRangeGenerator.generate_daily_ranges(self.config.target_year + 1)
         logging.info(f"将按 {len(date_ranges)} 个日期范围进行爬取")
-        
+
         # 输出文件路径
         output_filename = f"年报链接_{self.config.target_year}{GZH}.xlsx"
         output_path = Path(self.config.output_dir) / output_filename
-        
+
         # 爬取和解析数据（边爬边解析）
         parsed_data = []
         total_raw_count = 0
         filtered_count = 0
-        
+
         for idx, date_range in enumerate(date_ranges, 1):
             logging.info(f"[{idx}/{len(date_ranges)}] 正在爬取: {date_range}")
             results = self.client.fetch_all_pages(date_range)
             total_raw_count += len(results)
-            
+
             # 立即解析和过滤
             for announcement in results:
                 parsed = self._parse_announcement(announcement)
@@ -382,7 +387,7 @@ class AnnualReportCrawler:
                     parsed_data.append(parsed)
                 else:
                     filtered_count += 1
-            
+
             # 增量保存 (仅 Excel 模式)
             if self.db_conn is None and len(parsed_data) >= self.config.save_interval:
                 self._save_to_excel(parsed_data, str(output_path))
@@ -401,18 +406,18 @@ class AnnualReportCrawler:
                 self._save_to_excel(parsed_data, str(output_path))
 
         # 统计信息
-        logging.info("="*60)
-        logging.info(f"爬取完成统计:")
+        logging.info("=" * 60)
+        logging.info("爬取完成统计:")
         logging.info(f"  原始记录: {total_raw_count} 条")
         logging.info(f"  过滤记录: {filtered_count} 条")
         logging.info(f"  有效记录: {len(parsed_data)} 条")
         if self.db_conn is None:
             logging.info(f"  保存路径: {output_path}")
         else:
-            logging.info(f"  保存模式: DuckDB")
-        logging.info("="*60)
+            logging.info("  保存模式: DuckDB")
+        logging.info("=" * 60)
         logging.info(f"{self.config.target_year}年年报爬取完成")
-        logging.info("="*60)
+        logging.info("=" * 60)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -428,12 +433,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="使用 config.yaml 配置文件运行（推荐）。",
     )
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         default="config.yaml",
         help="指定配置文件路径（默认 config.yaml）。",
     )
     parser.add_argument(
-        "--year", "-y",
+        "--year",
+        "-y",
         type=int,
         nargs="+",
         help="目标年份（覆盖配置文件），支持多年份如 --year 2022 2023。",
@@ -467,8 +474,8 @@ def _run_with_config(args: argparse.Namespace) -> None:
     """使用配置文件运行爬虫。"""
     try:
         from annual_report_mda.config_manager import (
-            load_config,
             apply_cli_overrides,
+            load_config,
             log_config_summary,
         )
     except ImportError as e:
@@ -509,6 +516,7 @@ def _run_with_config(args: argparse.Namespace) -> None:
     if use_duckdb:
         try:
             from annual_report_mda.db import init_db
+
             db_path = config.database.path
             db_conn = init_db(db_path)
             logging.info(f"DuckDB 模式: 数据将写入 {db_path}")
@@ -547,7 +555,7 @@ def _run_with_embedded_config() -> None:
     # 目标年份
     TARGET_YEAR = 2024
     # 排除关键词列表（可加入'更正后'、'修订版'等）
-    EXCLUDE_KEYWORDS = ['英文', '已取消', '摘要']
+    EXCLUDE_KEYWORDS = ["英文", "已取消", "摘要"]
 
     # 行业过滤（为空则不过滤）
     TRADE = ""
@@ -582,7 +590,7 @@ def _run_with_embedded_config() -> None:
                 timeout=TIMEOUT,
                 output_dir=OUTPUT_DIR,
                 save_interval=SAVE_INTERVAL,
-                strict_year_check=STRICT_YEAR_CHECK
+                strict_year_check=STRICT_YEAR_CHECK,
             )
 
             crawler = AnnualReportCrawler(config)
@@ -600,7 +608,7 @@ def _run_with_embedded_config() -> None:
             timeout=TIMEOUT,
             output_dir=OUTPUT_DIR,
             save_interval=SAVE_INTERVAL,
-            strict_year_check=STRICT_YEAR_CHECK
+            strict_year_check=STRICT_YEAR_CHECK,
         )
 
         crawler = AnnualReportCrawler(config)
@@ -627,5 +635,5 @@ def main(argv: list[str]) -> None:
         _run_with_embedded_config()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main(sys.argv)

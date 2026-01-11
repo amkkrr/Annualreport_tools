@@ -1,22 +1,23 @@
 """
 LLM 提供商基类
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
 class LLMResponse:
     """LLM 响应结构"""
+
     content: str
     model: str
     provider: str
     usage: dict = field(default_factory=dict)  # {"prompt_tokens": N, "completion_tokens": M}
     latency_ms: int = 0
-    raw_response: Optional[dict] = None
+    raw_response: dict | None = None
 
 
 class LLMProvider(ABC):
@@ -33,7 +34,7 @@ class LLMProvider(ABC):
         self,
         prompt: str,
         *,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         timeout: float = 60.0,

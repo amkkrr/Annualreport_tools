@@ -1,14 +1,13 @@
 """
 动态 Few-shot 样本存储
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
-
 
 _LOG = logging.getLogger(__name__)
 
@@ -16,6 +15,7 @@ _LOG = logging.getLogger(__name__)
 @dataclass
 class FewShotSample:
     """Few-shot 样本"""
+
     stock_code: str
     year: int
     industry: str
@@ -50,10 +50,7 @@ class FewShotStore:
     def save(self) -> None:
         """保存样本库"""
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "version": "1.0",
-            "samples": [asdict(s) for s in self._samples]
-        }
+        data = {"version": "1.0", "samples": [asdict(s) for s in self._samples]}
         with open(self.store_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         _LOG.info(f"保存 {len(self._samples)} 个 few-shot 样本")
@@ -72,8 +69,8 @@ class FewShotStore:
     def find_similar(
         self,
         keywords: list[str],
-        industry: Optional[str] = None,
-        toc_signature: Optional[str] = None,
+        industry: str | None = None,
+        toc_signature: str | None = None,
         top_k: int = 3,
     ) -> list[FewShotSample]:
         """

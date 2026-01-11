@@ -1,20 +1,17 @@
 """
 测试 mda_extractor.py 模块的提取器功能。
 """
-import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
 
 # 导入被测试的模块
 import sys
+from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from mda_extractor import (
+    _extract_one_worker,
     _infer_stock_year,
     _iter_txt_files,
-    _extract_one_worker,
 )
 
 

@@ -5,13 +5,15 @@
 用法:
     python scripts/download_samples.py --input data/download_samples.json
 """
+
+import argparse
 import json
 import sys
-from pathlib import Path
-import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import requests
+from pathlib import Path
+
 import pdfplumber
+import requests
 
 
 def download_pdf(url: str, output_path: Path, timeout: int = 30) -> bool:
@@ -21,9 +23,7 @@ def download_pdf(url: str, output_path: Path, timeout: int = 30) -> bool:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
     try:
         resp = requests.get(url, headers=headers, timeout=timeout, stream=True)
@@ -54,7 +54,7 @@ def convert_pdf_to_txt(pdf_path: Path, txt_path: Path) -> bool:
                     text_parts.append(text)
 
         if not text_parts:
-            print(f"  警告: PDF 无文本内容")
+            print("  警告: PDF 无文本内容")
             return False
 
         txt_path.write_text("\n\n".join(text_parts), encoding="utf-8")
@@ -90,7 +90,7 @@ def process_sample(sample: dict, pdf_root: str, txt_root: str) -> dict:
         "pdf_path": str(pdf_path),
         "txt_path": str(txt_path),
         "download_ok": False,
-        "convert_ok": False
+        "convert_ok": False,
     }
 
     # 下载
@@ -106,14 +106,16 @@ def process_sample(sample: dict, pdf_root: str, txt_root: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="下载选定的样本 PDF 并转换为 TXT")
-    parser.add_argument("--input", type=str, default="data/download_samples.json",
-                        help="样本列表 JSON 文件")
-    parser.add_argument("--output-root", type=str, default="outputs/annual_reports",
-                        help="输出根目录")
-    parser.add_argument("--workers", type=int, default=4,
-                        help="并发下载数")
-    parser.add_argument("--result", type=str, default="data/download_results.json",
-                        help="结果输出文件")
+    parser.add_argument(
+        "--input", type=str, default="data/download_samples.json", help="样本列表 JSON 文件"
+    )
+    parser.add_argument(
+        "--output-root", type=str, default="outputs/annual_reports", help="输出根目录"
+    )
+    parser.add_argument("--workers", type=int, default=4, help="并发下载数")
+    parser.add_argument(
+        "--result", type=str, default="data/download_results.json", help="结果输出文件"
+    )
 
     args = parser.parse_args()
 
@@ -139,9 +141,7 @@ def main():
 
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {
-            executor.submit(
-                process_sample, sample, args.output_root, args.output_root
-            ): sample
+            executor.submit(process_sample, sample, args.output_root, args.output_root): sample
             for sample in samples
         }
 
@@ -158,22 +158,21 @@ def main():
                 print(f"[{i}/{len(samples)}] {status} {sample['stock_code']}-{sample['year']}")
             except Exception as e:
                 print(f"[{i}/{len(samples)}] ✗ {sample['stock_code']}-{sample['year']}: {e}")
-                results.append({
-                    "stock_code": sample["stock_code"],
-                    "year": sample["year"],
-                    "error": str(e)
-                })
+                results.append(
+                    {"stock_code": sample["stock_code"], "year": sample["year"], "error": str(e)}
+                )
 
     # 保存结果
     result_path = Path(args.result)
     result_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(result_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "total": len(samples),
-            "success": success_count,
-            "results": results
-        }, f, ensure_ascii=False, indent=2)
+        json.dump(
+            {"total": len(samples), "success": success_count, "results": results},
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
 
     print(f"\n完成: {success_count}/{len(samples)} 成功")
     print(f"结果已保存至: {args.result}")

@@ -7,28 +7,30 @@
 """多进程年报文本关键词分析器。"""
 
 from __future__ import annotations
+
 import argparse
 import logging
 import os
 import re
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing import Pool, cpu_count
-from typing import Iterator, List, Optional, Tuple
+
 import jieba
 import xlwt
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
-def extract_keywords(filename: str, keywords: List[str]) -> Tuple[List[int], int]:
+def extract_keywords(filename: str, keywords: list[str]) -> tuple[list[int], int]:
     """读取单个文件并统计关键词及总词数。"""
     keyword_counts = [0] * len(keywords)
     total_words = 0
 
     try:
-        with open(filename, "r", encoding="utf-8") as file_handle:
+        with open(filename, encoding="utf-8") as file_handle:
             content = file_handle.read()
     except OSError as exc:  # 捕获所有与文件相关的异常
         logging.error("读取文件失败: %s - %s", filename, exc)
@@ -45,7 +47,7 @@ def extract_keywords(filename: str, keywords: List[str]) -> Tuple[List[int], int
     return keyword_counts, total_words
 
 
-def _analyze_task(task: Tuple[str, str, str, str, List[str]]):
+def _analyze_task(task: tuple[str, str, str, str, list[str]]):
     file_path, stock_code, company_name, file_year, keywords = task
     try:
         keyword_counts, total_words = extract_keywords(file_path, keywords)
@@ -58,12 +60,12 @@ def _analyze_task(task: Tuple[str, str, str, str, List[str]]):
 @dataclass(frozen=True)
 class AnalyzerConfig:
     folder_path: str
-    keywords: List[str]
+    keywords: list[str]
     output_path: str
     chunk_size: int = 100
-    start_year: Optional[int] = None
-    end_year: Optional[int] = None
-    processes: Optional[int] = None
+    start_year: int | None = None
+    end_year: int | None = None
+    processes: int | None = None
 
 
 class KeywordAnalyzer:
@@ -90,7 +92,7 @@ class KeywordAnalyzer:
         for index, keyword in enumerate(self.config.keywords, start=len(self.HEADER)):
             self.worksheet.write(0, index, keyword)
 
-    def _should_skip_year(self, year: Optional[str]) -> bool:
+    def _should_skip_year(self, year: str | None) -> bool:
         if year is None:
             return False
         try:
@@ -114,11 +116,11 @@ class KeywordAnalyzer:
             total += sum(1 for filename in files if filename.endswith(".txt"))
         return total
 
-    def _extract_year_from_path(self, path: str) -> Optional[str]:
+    def _extract_year_from_path(self, path: str) -> str | None:
         match = re.match(r".*([12]\d{3}).*", os.path.basename(path))
         return match.group(1) if match else None
 
-    def _iter_tasks(self) -> Iterator[Tuple[str, str, str, str, List[str]]]:
+    def _iter_tasks(self) -> Iterator[tuple[str, str, str, str, list[str]]]:
         for root, dirs, files in os.walk(self.config.folder_path):
             folder_year = self._extract_year_from_path(root)
             if self._should_skip_year(folder_year):
@@ -141,7 +143,7 @@ class KeywordAnalyzer:
                 yield (file_path, stock_code, company_name, file_year, self.config.keywords)
 
     @staticmethod
-    def _parse_filename(filename: str) -> Optional[Tuple[str, str, str]]:
+    def _parse_filename(filename: str) -> tuple[str, str, str] | None:
         match = re.match(r"^(\d{6})_(.*?)_(\d{4})\.txt$", filename)
         if not match:
             return None
@@ -192,7 +194,7 @@ class KeywordAnalyzer:
         logging.info("Excel 文件保存成功：%s", self.config.output_path)
 
 
-def validate_year_range(start_year: Optional[int], end_year: Optional[int]) -> None:
+def validate_year_range(start_year: int | None, end_year: int | None) -> None:
     if start_year is not None and end_year is not None and start_year > end_year:
         raise ValueError("起始年份不能大于结束年份")
 
@@ -210,7 +212,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="使用 config.yaml 配置文件运行（推荐）。",
     )
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         default="config.yaml",
         help="指定配置文件路径（默认 config.yaml）。",
     )
@@ -233,7 +236,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="结束年份（包含）。",
     )
     parser.add_argument(
-        "--processes", "-p",
+        "--processes",
+        "-p",
         type=int,
         help="并行进程数（默认自动）。",
     )
@@ -349,7 +353,9 @@ def _run_with_embedded_config() -> None:
     except Exception as exc:
         logging.error("文件处理失败: %s", exc)
 
-    print("提示：如果程序没有任何输出，请检查路径及 TXT 文件命名格式（如 600519_贵州茅台_2019.txt）。")
+    print(
+        "提示：如果程序没有任何输出，请检查路径及 TXT 文件命名格式（如 600519_贵州茅台_2019.txt）。"
+    )
 
 
 def main(argv: list[str]) -> None:

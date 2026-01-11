@@ -1,14 +1,15 @@
 """
 自适应学习模块单元测试
 """
-import pytest
-import json
+
 import tempfile
 from pathlib import Path
 
-from annual_report_mda.adaptive.few_shot import FewShotStore, FewShotSample
+import pytest
+
+from annual_report_mda.adaptive.failure_patterns import FailurePatternStore
+from annual_report_mda.adaptive.few_shot import FewShotSample, FewShotStore
 from annual_report_mda.adaptive.strategy_weights import StrategyWeights
-from annual_report_mda.adaptive.failure_patterns import FailurePatternStore, FailurePattern
 
 
 class TestFewShotSample:
@@ -178,8 +179,8 @@ class TestStrategyWeights:
             assert generic_weight > toc_weight
 
             # 成功率检查
-            assert weights.get_success_rate("generic") == pytest.approx(2/3, rel=0.01)
-            assert weights.get_success_rate("toc") == pytest.approx(1/3, rel=0.01)
+            assert weights.get_success_rate("generic") == pytest.approx(2 / 3, rel=0.01)
+            assert weights.get_success_rate("toc") == pytest.approx(1 / 3, rel=0.01)
 
         finally:
             Path(store_path).unlink(missing_ok=True)
@@ -283,7 +284,9 @@ class TestFailurePatternStore:
             store.add_failure("600519", 2023, "ERR", "目录解析失败")
 
             # 更新排除规则
-            result = store.update_exclusion_rule("TOC_PARSE_FAILED", "避免使用 TOC 解析器处理无目录页的年报")
+            result = store.update_exclusion_rule(
+                "TOC_PARSE_FAILED", "避免使用 TOC 解析器处理无目录页的年报"
+            )
             assert result is True
 
             # 获取排除提示

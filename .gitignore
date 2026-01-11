@@ -36,6 +36,7 @@ docs/audits/
 *.txt
 *.TXT
 !requirements.txt
+!requirements-dev.txt
 *.csv
 *.xlsx
 *.xlsm
@@ -56,3 +57,8 @@ config.yaml
 config.local.yaml
 config.*.yaml
 !config.yaml.example
+
+# Coverage reports
+htmlcov/
+coverage.xml
+.coverage

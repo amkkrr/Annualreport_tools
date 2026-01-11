@@ -1,0 +1,94 @@
+[project]
+name = "annualreport-tools"
+version = "0.1.0"
+description = "中国上市公司年报抓取、下载、转换及关键词分析工具集"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["annual_report_mda*"]
+
+# Ruff 配置
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".git", ".venv", "venv", "__pycache__", ".pytest_cache", "outputs", "data"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "ARG", "SIM"]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # function call in default argument
+    "B904",   # raise without from (too many existing cases)
+    "B905",   # zip without strict parameter
+    "ARG001", # unused function argument (common in callbacks)
+    "ARG002", # unused method argument (common in tests and protocols)
+    "SIM102", # nested if (sometimes clearer)
+    "SIM103", # return condition directly (readability preference)
+    "SIM108", # ternary operator (not always clearer)
+    "SIM110", # use any() instead of for loop (readability preference)
+    "SIM117", # multiple with statements (readability preference)
+    "C420",   # unnecessary dict comprehension (style preference)
+    "B007",   # unused loop variable (common pattern)
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+# Files using lazy imports for duckdb/pandas type annotations
+"1.report_link_crawler.py" = ["F821"]
+"2.pdf_batch_converter.py" = ["F821"]
+"annual_report_mda/db.py" = ["F821"]
+"annual_report_mda/data_manager.py" = ["F821"]
+"mda_extractor.py" = ["F821"]
+"scripts/*.py" = ["F821"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["annual_report_mda"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# Black 配置
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+exclude = '''
+/(\.git|\.venv|venv|__pycache__|\.pytest_cache|outputs|data)/
+'''
+
+# Pytest 配置
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+]
+addopts = ["-v", "--tb=short", "--strict-markers"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+# Coverage 配置
+[tool.coverage.run]
+source = ["annual_report_mda"]
+branch = true
+omit = ["*/__pycache__/*", "*/tests/*", "*/.venv/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
+precision = 2
+
+[tool.coverage.html]
+directory = "htmlcov"

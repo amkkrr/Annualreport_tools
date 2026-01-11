@@ -7,6 +7,7 @@ M2 验收 - 质量评分回填脚本
 用法:
     python scripts/backfill_quality_score.py [--dry-run] [--db PATH] [--limit N]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -15,10 +16,7 @@ import logging
 import sys
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 _LOG = logging.getLogger(__name__)
 
 
@@ -89,6 +87,7 @@ def backfill_quality_scores(db_path: str, dry_run: bool = False, limit: int | No
         }
     """
     import duckdb
+
     from annual_report_mda.scorer import calculate_quality_score
 
     conn = duckdb.connect(db_path)
@@ -142,7 +141,7 @@ def backfill_quality_scores(db_path: str, dry_run: bool = False, limit: int | No
                     SET quality_score = ?, needs_review = ?
                     WHERE stock_code = ? AND year = ? AND source_sha256 = ?
                     """,
-                    (result.score, result.needs_review, stock_code, year, source_sha256)
+                    (result.score, result.needs_review, stock_code, year, source_sha256),
                 )
                 _LOG.debug(f"已更新: {stock_code}-{year} score={result.score}")
 
@@ -171,9 +170,15 @@ def verify_backfill(db_path: str) -> dict:
     conn = duckdb.connect(db_path, read_only=True)
 
     total = conn.execute("SELECT COUNT(*) FROM mda_text").fetchone()[0]
-    with_score = conn.execute("SELECT COUNT(*) FROM mda_text WHERE quality_score IS NOT NULL").fetchone()[0]
-    needs_review_count = conn.execute("SELECT COUNT(*) FROM mda_text WHERE needs_review = true").fetchone()[0]
-    low_score_count = conn.execute("SELECT COUNT(*) FROM mda_text WHERE quality_score < 60").fetchone()[0]
+    with_score = conn.execute(
+        "SELECT COUNT(*) FROM mda_text WHERE quality_score IS NOT NULL"
+    ).fetchone()[0]
+    needs_review_count = conn.execute(
+        "SELECT COUNT(*) FROM mda_text WHERE needs_review = true"
+    ).fetchone()[0]
+    low_score_count = conn.execute(
+        "SELECT COUNT(*) FROM mda_text WHERE quality_score < 60"
+    ).fetchone()[0]
 
     # 采样检查
     sample = conn.execute(
@@ -191,7 +196,7 @@ def verify_backfill(db_path: str) -> dict:
         "sample": sample,
     }
 
-    _LOG.info(f"验证结果:")
+    _LOG.info("验证结果:")
     _LOG.info(f"  总记录: {total}")
     _LOG.info(f"  有评分: {with_score} ({result['coverage']}%)")
     _LOG.info(f"  需审核: {needs_review_count}")
@@ -208,24 +213,11 @@ def main():
     parser.add_argument(
         "--db",
         default="data/annual_reports.duckdb",
-        help="DuckDB 数据库路径 (默认 data/annual_reports.duckdb)"
+        help="DuckDB 数据库路径 (默认 data/annual_reports.duckdb)",
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="仅打印将执行的操作，不实际修改"
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="限制处理记录数（用于测试）"
-    )
-    parser.add_argument(
-        "--verify",
-        action="store_true",
-        help="仅验证回填结果"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="仅打印将执行的操作，不实际修改")
+    parser.add_argument("--limit", type=int, default=None, help="限制处理记录数（用于测试）")
+    parser.add_argument("--verify", action="store_true", help="仅验证回填结果")
 
     args = parser.parse_args()
 

@@ -1,14 +1,13 @@
 """
 失败模式学习
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
-
 
 _LOG = logging.getLogger(__name__)
 
@@ -16,6 +15,7 @@ _LOG = logging.getLogger(__name__)
 @dataclass
 class FailurePattern:
     """失败模式"""
+
     pattern_id: str
     description: str
     match_conditions: dict  # 匹配条件
@@ -46,10 +46,7 @@ class FailurePatternStore:
     def save(self) -> None:
         """保存失败模式"""
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "version": "1.0",
-            "patterns": [asdict(p) for p in self._patterns]
-        }
+        data = {"version": "1.0", "patterns": [asdict(p) for p in self._patterns]}
         with open(self.store_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -59,7 +56,7 @@ class FailurePatternStore:
         year: int,
         error_type: str,
         error_message: str,
-        extraction_result: Optional[dict] = None,
+        extraction_result: dict | None = None,
     ) -> None:
         """添加失败记录，自动归类模式"""
         pattern_id = self._classify_failure(error_type, error_message)
@@ -71,13 +68,15 @@ class FailurePatternStore:
                 return
 
         # 新模式
-        self._patterns.append(FailurePattern(
-            pattern_id=pattern_id,
-            description=f"{error_type}: {error_message[:100]}",
-            match_conditions={"error_type": error_type},
-            exclusion_rule="",  # 待 LLM 分析生成
-            occurrences=1,
-        ))
+        self._patterns.append(
+            FailurePattern(
+                pattern_id=pattern_id,
+                description=f"{error_type}: {error_message[:100]}",
+                match_conditions={"error_type": error_type},
+                exclusion_rule="",  # 待 LLM 分析生成
+                occurrences=1,
+            )
+        )
         _LOG.info(f"新增失败模式: {pattern_id}")
 
     def _classify_failure(self, error_type: str, error_message: str) -> str:
@@ -124,8 +123,7 @@ class FailurePatternStore:
             "total_patterns": len(self._patterns),
             "total_occurrences": sum(p.occurrences for p in self._patterns),
             "top_patterns": sorted(
-                [(p.pattern_id, p.occurrences) for p in self._patterns],
-                key=lambda x: -x[1]
+                [(p.pattern_id, p.occurrences) for p in self._patterns], key=lambda x: -x[1]
             )[:5],
         }
 

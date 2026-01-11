@@ -5,17 +5,18 @@ LLM 辅助标注脚本 - 使用 claude CLI 识别 MD&A 边界
 用法:
     python scripts/llm_annotate.py --input samples.json --output data/golden_set_draft.json
 """
+
+import argparse
 import json
 import subprocess
 import sys
-from pathlib import Path
-from typing import Optional
-import argparse
 from datetime import datetime
+from pathlib import Path
 
 
 class LLMCallError(Exception):
     """LLM 调用失败异常"""
+
     pass
 
 
@@ -25,7 +26,7 @@ def annotate_sample(
     year: int,
     model: str = "claude-sonnet",
     max_chars: int = 80000,
-    timeout: int = 120
+    timeout: int = 120,
 ) -> dict:
     """
     使用 LLM 识别 MD&A 边界。
@@ -89,11 +90,7 @@ def annotate_sample(
     # 5. 调用 claude CLI（通过标准输入传递 prompt）
     try:
         result = subprocess.run(
-            ["claude"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=timeout
+            ["claude"], input=prompt, capture_output=True, text=True, timeout=timeout
         )
     except subprocess.TimeoutExpired:
         raise LLMCallError(f"LLM 调用超时 ({timeout}s)")
@@ -127,7 +124,7 @@ def batch_annotate(
     sample_list: list[dict],
     output_path: str = "data/golden_set_draft.json",
     concurrency: int = 1,
-    model: str = "claude-sonnet"
+    model: str = "claude-sonnet",
 ) -> None:
     """
     批量标注样本列表。
@@ -145,7 +142,7 @@ def batch_annotate(
         "version": "1.0",
         "created_at": datetime.now().isoformat(),
         "model": model,
-        "samples": []
+        "samples": [],
     }
 
     total = len(sample_list)
@@ -172,7 +169,7 @@ def batch_annotate(
                     "end_marker": annotation["end_marker"],
                     "start_char_offset": annotation["start_char_offset"],
                     "end_char_offset": annotation["end_char_offset"],
-                    "char_count": annotation["end_char_offset"] - annotation["start_char_offset"]
+                    "char_count": annotation["end_char_offset"] - annotation["start_char_offset"],
                 },
                 "annotation": {
                     "method": "llm_assisted",
@@ -180,8 +177,8 @@ def batch_annotate(
                     "confidence": annotation.get("confidence", 0.0),
                     "reasoning": annotation.get("reasoning", ""),
                     "human_verified": False,
-                    "annotated_at": datetime.now().isoformat()
-                }
+                    "annotated_at": datetime.now().isoformat(),
+                },
             }
 
             results["samples"].append(sample_record)
@@ -190,13 +187,15 @@ def batch_annotate(
         except (FileNotFoundError, LLMCallError) as e:
             print(f"  ✗ 失败: {e}")
             # 记录失败但继续
-            results["samples"].append({
-                "id": f"GS-{idx:03d}",
-                "stock_code": stock_code,
-                "year": year,
-                "source_txt_path": txt_path,
-                "error": str(e)
-            })
+            results["samples"].append(
+                {
+                    "id": f"GS-{idx:03d}",
+                    "stock_code": stock_code,
+                    "year": year,
+                    "source_txt_path": txt_path,
+                    "error": str(e),
+                }
+            )
 
     # 保存结果
     with open(output_path, "w", encoding="utf-8") as f:
@@ -223,7 +222,7 @@ def main():
     python scripts/llm_annotate.py \\
         --input samples.json \\
         --output data/golden_set_draft.json
-        """
+        """,
     )
 
     # 单个样本模式
@@ -233,14 +232,18 @@ def main():
 
     # 批量模式
     parser.add_argument("--input", type=str, help="批量样本列表 JSON 文件")
-    parser.add_argument("--output", type=str, default="data/golden_set_draft.json",
-                        help="输出路径 (默认: data/golden_set_draft.json)")
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="data/golden_set_draft.json",
+        help="输出路径 (默认: data/golden_set_draft.json)",
+    )
 
     # 通用参数
-    parser.add_argument("--model", type=str, default="claude-sonnet",
-                        help="LLM 模型标识 (默认: claude-sonnet)")
-    parser.add_argument("--concurrency", type=int, default=1,
-                        help="批量模式并发数 (默认: 1)")
+    parser.add_argument(
+        "--model", type=str, default="claude-sonnet", help="LLM 模型标识 (默认: claude-sonnet)"
+    )
+    parser.add_argument("--concurrency", type=int, default=1, help="批量模式并发数 (默认: 1)")
 
     args = parser.parse_args()
 

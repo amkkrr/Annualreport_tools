@@ -1,11 +1,11 @@
 """
 Claude (Anthropic) LLM 提供商
 """
+
 from __future__ import annotations
 
 import os
 import time
-from typing import Optional
 
 import httpx
 
@@ -21,9 +21,9 @@ class ClaudeProvider(LLMProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
-        api_base: Optional[str] = None,
+        api_key: str | None = None,
+        model: str | None = None,
+        api_base: str | None = None,
     ):
         self._api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self._model = model or self.DEFAULT_MODEL
@@ -40,7 +40,7 @@ class ClaudeProvider(LLMProvider):
         self,
         prompt: str,
         *,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         timeout: float = 60.0,

@@ -1,19 +1,17 @@
 """
 测试 mda_extractor.py 的端到端集成功能。
 """
+
 import shutil
-import tempfile
+import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from mda_extractor import main
 from annual_report_mda.db import init_db
-from annual_report_mda.data_manager import should_skip_incremental
+from mda_extractor import main
 
 
 class TestEndToEndSingleFile:
@@ -27,10 +25,14 @@ class TestEndToEndSingleFile:
         shutil.copy(mock_no_toc_path, test_file)
 
         # 运行提取器
-        exit_code = main([
-            "--text", str(test_file),
-            "--db", str(temp_db_path),
-        ])
+        exit_code = main(
+            [
+                "--text",
+                str(test_file),
+                "--db",
+                str(temp_db_path),
+            ]
+        )
 
         assert exit_code == 0
 
@@ -50,12 +52,18 @@ class TestEndToEndSingleFile:
         test_file = temp_dir / "test_report.txt"
         shutil.copy(mock_no_toc_path, test_file)
 
-        exit_code = main([
-            "--text", str(test_file),
-            "--db", str(temp_db_path),
-            "--stock-code", "600519",
-            "--year", "2022",
-        ])
+        exit_code = main(
+            [
+                "--text",
+                str(test_file),
+                "--db",
+                str(temp_db_path),
+                "--stock-code",
+                "600519",
+                "--year",
+                "2022",
+            ]
+        )
 
         assert exit_code == 0
 
@@ -77,10 +85,14 @@ class TestIncrementalMode:
         shutil.copy(mock_no_toc_path, test_file)
 
         # 第一次提取
-        exit_code1 = main([
-            "--text", str(test_file),
-            "--db", str(temp_db_path),
-        ])
+        exit_code1 = main(
+            [
+                "--text",
+                str(test_file),
+                "--db",
+                str(temp_db_path),
+            ]
+        )
         assert exit_code1 == 0
 
         # 验证记录存在
@@ -91,11 +103,15 @@ class TestIncrementalMode:
         assert count_before >= 1
 
         # 第二次使用增量模式
-        exit_code2 = main([
-            "--text", str(test_file),
-            "--db", str(temp_db_path),
-            "--incremental",
-        ])
+        exit_code2 = main(
+            [
+                "--text",
+                str(test_file),
+                "--db",
+                str(temp_db_path),
+                "--incremental",
+            ]
+        )
         assert exit_code2 == 0
 
         # 验证没有新增记录（或记录数不变）
@@ -115,20 +131,22 @@ class TestDryRunMode:
         test_file = temp_dir / "000778_新兴铸管_2023.txt"
         shutil.copy(mock_no_toc_path, test_file)
 
-        exit_code = main([
-            "--text", str(test_file),
-            "--db", str(temp_db_path),
-            "--dry-run",
-        ])
+        exit_code = main(
+            [
+                "--text",
+                str(test_file),
+                "--db",
+                str(temp_db_path),
+                "--dry-run",
+            ]
+        )
 
         assert exit_code == 0
 
         # dry-run 模式下数据库可能未初始化或表为空
         if temp_db_path.exists():
             conn = init_db(temp_db_path)
-            result = conn.execute(
-                "SELECT COUNT(*) FROM mda_text"
-            ).fetchone()
+            result = conn.execute("SELECT COUNT(*) FROM mda_text").fetchone()
             # dry-run 不应写入任何记录
             assert result[0] == 0
 
@@ -150,11 +168,16 @@ class TestBatchMode:
                 dst = batch_dir / f"00000{i}_测试公司{i}_2023.txt"
                 shutil.copy(src, dst)
 
-        exit_code = main([
-            "--dir", str(batch_dir),
-            "--db", str(temp_db_path),
-            "--workers", "1",
-        ])
+        exit_code = main(
+            [
+                "--dir",
+                str(batch_dir),
+                "--db",
+                str(temp_db_path),
+                "--workers",
+                "1",
+            ]
+        )
 
         # 批量模式可能有部分失败，但不应崩溃
         assert exit_code in (0, 2)
@@ -172,10 +195,14 @@ class TestErrorHandling:
     def test_missing_file(self, temp_db_path: Path):
         """文件不存在时应报错。"""
         with pytest.raises(SystemExit):
-            main([
-                "--text", "/nonexistent/file.txt",
-                "--db", str(temp_db_path),
-            ])
+            main(
+                [
+                    "--text",
+                    "/nonexistent/file.txt",
+                    "--db",
+                    str(temp_db_path),
+                ]
+            )
 
     def test_missing_stock_year_no_params(self, temp_dir: Path, temp_db_path: Path):
         """无法推断 stock_code/year 且未提供参数时应报错。"""
@@ -184,20 +211,29 @@ class TestErrorHandling:
         test_file.write_text("测试内容", encoding="utf-8")
 
         with pytest.raises(SystemExit):
-            main([
-                "--text", str(test_file),
-                "--db", str(temp_db_path),
-            ])
+            main(
+                [
+                    "--text",
+                    str(test_file),
+                    "--db",
+                    str(temp_db_path),
+                ]
+            )
 
     def test_invalid_workers(self, mock_no_toc_path: Path, temp_db_path: Path):
         """无效 workers 参数应报错。"""
         # workers <= 0 应该报错
         with pytest.raises(SystemExit):
-            main([
-                "--dir", str(mock_no_toc_path.parent),
-                "--db", str(temp_db_path),
-                "--workers", "0",
-            ])
+            main(
+                [
+                    "--dir",
+                    str(mock_no_toc_path.parent),
+                    "--db",
+                    str(temp_db_path),
+                    "--workers",
+                    "0",
+                ]
+            )
 
 
 class TestQualityScoreIntegration:
@@ -209,10 +245,14 @@ class TestQualityScoreIntegration:
         test_file = temp_dir / "000778_新兴铸管_2023.txt"
         shutil.copy(mock_no_toc_path, test_file)
 
-        exit_code = main([
-            "--text", str(test_file),
-            "--db", str(temp_db_path),
-        ])
+        exit_code = main(
+            [
+                "--text",
+                str(test_file),
+                "--db",
+                str(temp_db_path),
+            ]
+        )
 
         assert exit_code == 0
 
@@ -233,10 +273,14 @@ class TestQualityScoreIntegration:
         test_file = temp_dir / "000778_新兴铸管_2023.txt"
         shutil.copy(mock_no_toc_path, test_file)
 
-        main([
-            "--text", str(test_file),
-            "--db", str(temp_db_path),
-        ])
+        main(
+            [
+                "--text",
+                str(test_file),
+                "--db",
+                str(temp_db_path),
+            ]
+        )
 
         conn = init_db(temp_db_path)
         # 查询 needs_review 视图

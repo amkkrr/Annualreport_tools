@@ -1,10 +1,12 @@
 """
 测试 strategies.py 模块的提取策略功能。
 """
+
 from pathlib import Path
 
 import pytest
 
+from annual_report_mda.scorer import calculate_mda_score
 from annual_report_mda.strategies import (
     ExtractionResult,
     TocHit,
@@ -12,7 +14,6 @@ from annual_report_mda.strategies import (
     extract_mda_iterative,
     parse_toc_for_page_range,
 )
-from annual_report_mda.scorer import calculate_mda_score, ScoreDetail
 
 
 class TestCalculateMdaScore:

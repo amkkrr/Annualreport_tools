@@ -1,8 +1,8 @@
 """
 LLM Prompt 模板
 """
-from __future__ import annotations
 
+from __future__ import annotations
 
 SYSTEM_PROMPT = """你是一个专业的中国上市公司年报分析助手。你的任务是帮助识别和提取年报中的"管理层讨论与分析"(MD&A) 章节。
 
@@ -124,7 +124,9 @@ def format_few_shot_examples(samples: list[dict]) -> str:
 
     lines = []
     for i, sample in enumerate(samples, 1):
-        lines.append(f"### 案例 {i}: {sample.get('stock_code', 'N/A')} ({sample.get('year', 'N/A')})")
+        lines.append(
+            f"### 案例 {i}: {sample.get('stock_code', 'N/A')} ({sample.get('year', 'N/A')})"
+        )
         lines.append(f"- 行业: {sample.get('industry', 'N/A')}")
         lines.append(f"- 起始标题: `{sample.get('start_pattern', 'N/A')}`")
         lines.append(f"- 结束标题: `{sample.get('end_pattern', 'N/A')}`")

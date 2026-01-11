@@ -1,12 +1,11 @@
 """
 测试 L3 时序校验功能（FLAG_YOY_CHANGE_HIGH）。
 """
-import pytest
 
 from annual_report_mda.scorer import (
+    YOY_SIMILARITY_THRESHOLD,
     calculate_text_similarity,
     detect_yoy_change,
-    YOY_SIMILARITY_THRESHOLD,
 )
 
 
@@ -111,14 +110,10 @@ class TestDetectYoyChange:
         prev = "ABCDEFGHIJ" * 10 + "KLMNOP" * 10
 
         # 使用严格阈值
-        is_abnormal_strict, similarity = detect_yoy_change(
-            current, prev, similarity_threshold=0.95
-        )
+        is_abnormal_strict, similarity = detect_yoy_change(current, prev, similarity_threshold=0.95)
 
         # 使用宽松阈值
-        is_abnormal_loose, _ = detect_yoy_change(
-            current, prev, similarity_threshold=0.1
-        )
+        is_abnormal_loose, _ = detect_yoy_change(current, prev, similarity_threshold=0.1)
 
         # 严格阈值更容易触发异常
         assert similarity < 0.95
@@ -152,7 +147,7 @@ class TestYoyValidatorIntegration:
         assert sim1 == 1.0
 
         # 略有不同
-        modified = base[:len(base) // 2] + "收入增长" * 50
+        modified = base[: len(base) // 2] + "收入增长" * 50
         is_abnormal2, sim2 = detect_yoy_change(base, modified)
         # 相似度应该在某个范围内
         assert 0 < sim2 < 1

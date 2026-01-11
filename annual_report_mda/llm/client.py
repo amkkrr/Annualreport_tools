@@ -1,28 +1,29 @@
 """
 统一 LLM 客户端，支持多提供商降级
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from .providers.base import LLMProvider, LLMResponse
-from .providers.deepseek import DeepSeekProvider
-from .providers.qwen import QwenProvider
 from .providers.claude import ClaudeProvider
+from .providers.deepseek import DeepSeekProvider
 from .providers.openai import OpenAIProvider
-
+from .providers.qwen import QwenProvider
 
 _LOG = logging.getLogger(__name__)
 
 
 class LLMError(Exception):
     """LLM 调用错误基类"""
+
     pass
 
 
 class LLMAllProvidersFailedError(LLMError):
     """所有提供商均失败"""
+
     def __init__(self, errors: dict[str, Exception]):
         self.errors = errors
         providers = ", ".join(errors.keys())
@@ -31,6 +32,7 @@ class LLMAllProvidersFailedError(LLMError):
 
 class LLMJSONParseError(LLMError):
     """LLM 返回的 JSON 解析失败"""
+
     pass
 
 
@@ -43,8 +45,8 @@ class LLMClient:
 
     def __init__(
         self,
-        providers: Optional[list[str]] = None,
-        fallback_order: Optional[list[str]] = None,
+        providers: list[str] | None = None,
+        fallback_order: list[str] | None = None,
     ):
         """
         初始化 LLM 客户端。
@@ -96,7 +98,7 @@ class LLMClient:
             self._circuit_broken[provider] = True
             _LOG.warning(f"提供商 {provider} 熔断: 连续失败 {self._failure_threshold} 次")
 
-    def reset_circuit_breaker(self, provider: Optional[str] = None) -> None:
+    def reset_circuit_breaker(self, provider: str | None = None) -> None:
         """重置熔断器"""
         if provider:
             self._circuit_broken[provider] = False
@@ -109,10 +111,10 @@ class LLMClient:
         self,
         prompt: str,
         *,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        provider: Optional[str] = None,
+        provider: str | None = None,
         retry_on_failure: bool = True,
         timeout: float = 60.0,
     ) -> LLMResponse:
@@ -179,10 +181,10 @@ class LLMClient:
         self,
         prompt: str,
         *,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.3,
         max_tokens: int = 4096,
-        provider: Optional[str] = None,
+        provider: str | None = None,
     ) -> dict:
         """
         执行补全并解析 JSON 响应。

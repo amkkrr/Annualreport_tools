@@ -5,26 +5,25 @@
 用法:
     python scripts/evaluate_extraction.py --golden data/golden_set.json --source duckdb
 """
+
+import argparse
 import json
 import subprocess
 import sys
-from pathlib import Path
-from typing import Optional
-import argparse
 from datetime import datetime
+from pathlib import Path
+
 import duckdb
 
 
 class LLMCallError(Exception):
     """LLM 调用失败异常"""
+
     pass
 
 
 def call_llm_judge(
-    golden_sample: dict,
-    extracted_text: str,
-    model: str = "claude-sonnet",
-    timeout: int = 120
+    golden_sample: dict, extracted_text: str, model: str = "claude-sonnet", timeout: int = 120
 ) -> dict:
     """
     调用 LLM 评估提取质量。
@@ -63,8 +62,8 @@ def call_llm_judge(
 
 ## 输入信息
 **原文路径**: {source_path}
-**股票代码**: {golden_sample.get('stock_code', 'N/A')}
-**年份**: {golden_sample.get('year', 'N/A')}
+**股票代码**: {golden_sample.get("stock_code", "N/A")}
+**年份**: {golden_sample.get("year", "N/A")}
 
 **原文片段** (前 5000 字符):
 {original_text[:5000]}
@@ -93,11 +92,7 @@ def call_llm_judge(
     # 调用 claude CLI（通过标准输入传递 prompt）
     try:
         result = subprocess.run(
-            ["claude"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=timeout
+            ["claude"], input=prompt, capture_output=True, text=True, timeout=timeout
         )
     except subprocess.TimeoutExpired:
         raise LLMCallError(f"LLM 调用超时 ({timeout}s)")
@@ -130,7 +125,7 @@ def evaluate_single(
     golden_sample: dict,
     extracted_result: dict,
     use_llm_judge: bool = True,
-    model: str = "claude-sonnet"
+    model: str = "claude-sonnet",
 ) -> dict:
     """
     评估单个样本的提取质量。
@@ -190,7 +185,7 @@ def evaluate_single(
         "text_overlap_ratio": text_overlap_ratio,
         "best_overlap_ratio": overlap_ratio,
         "start_offset_diff": extracted_start - golden_start,
-        "end_offset_diff": extracted_end - golden_end
+        "end_offset_diff": extracted_end - golden_end,
     }
 
     # 2. LLM 评估（可选）
@@ -212,16 +207,16 @@ def evaluate_single(
         "sample_id": sample_id,
         "extracted_boundary": {
             "start_char_offset": extracted_start,
-            "end_char_offset": extracted_end
+            "end_char_offset": extracted_end,
         },
         "llm_evaluation": llm_eval,
         "rule_evaluation": rule_eval,
         "boundary_match": {
             "start_offset_diff": rule_eval["start_offset_diff"],
             "end_offset_diff": rule_eval["end_offset_diff"],
-            "is_acceptable": boundary_match
+            "is_acceptable": boundary_match,
         },
-        "final_score": final_score
+        "final_score": final_score,
     }
 
 
@@ -260,8 +255,8 @@ def compute_char_offsets(extracted_text: str, source_path: str) -> tuple[int, in
         if pos == -1:
             break
         # 检查周围是否有目录点线 (TOC indicator)
-        context = original[max(0, pos-100):pos+50]
-        has_toc_dots = context.count('.') > 20 or '…' in context or '...' in context
+        context = original[max(0, pos - 100) : pos + 50]
+        has_toc_dots = context.count(".") > 20 or "…" in context or "..." in context
         positions.append((pos, has_toc_dots))
         start = pos + 1
 
@@ -276,7 +271,7 @@ def compute_char_offsets(extracted_text: str, source_path: str) -> tuple[int, in
         anchor_short = extracted_text[:200].strip()
         anchor_normalized = "".join(anchor_short.split())
         for i in range(len(original) - 200):
-            window = original[i:i+300]
+            window = original[i : i + 300]
             window_normalized = "".join(window.split())
             if anchor_normalized in window_normalized:
                 return i, i + len(extracted_text)
@@ -324,7 +319,7 @@ def compute_text_overlap(golden_sample: dict, extracted_text: str, source_path: 
         normalized = "".join(c for c in text if c.isalnum())
         chunks = set()
         for i in range(0, len(normalized) - chunk_size, chunk_size // 2):
-            chunks.add(normalized[i:i+chunk_size])
+            chunks.add(normalized[i : i + chunk_size])
         return chunks
 
     golden_chunks = get_content_chunks(golden_text)
@@ -343,7 +338,7 @@ def run_evaluation(
     extraction_source: str = "duckdb",
     output_path: str = "data/evaluation_results.json",
     use_llm_judge: bool = True,
-    model: str = "claude-sonnet"
+    model: str = "claude-sonnet",
 ) -> dict:
     """
     运行完整评估流程。
@@ -404,7 +399,7 @@ def run_evaluation(
                 "text": text,
                 "start_char_offset": start_offset,
                 "end_char_offset": end_offset,
-                "source_path": source_path
+                "source_path": source_path,
             }
 
     else:
@@ -412,10 +407,7 @@ def run_evaluation(
         with open(extraction_source, encoding="utf-8") as f:
             extracted_list = json.load(f)
 
-        extracted_dict = {
-            f"{e['stock_code']}-{e['year']}": e
-            for e in extracted_list
-        }
+        extracted_dict = {f"{e['stock_code']}-{e['year']}": e for e in extracted_list}
 
     # 3. 逐样本评估
     results = {
@@ -424,7 +416,7 @@ def run_evaluation(
         "extractor_version": "0.3.0",  # 可从配置读取
         "use_llm_judge": use_llm_judge,
         "model": model if use_llm_judge else None,
-        "results": []
+        "results": [],
     }
 
     total = len(golden_set["samples"])
@@ -444,39 +436,29 @@ def run_evaluation(
 
         # 查找提取结果
         if key not in extracted_dict:
-            print(f"  ✗ 未找到提取结果")
-            results["results"].append({
-                "sample_id": sample_id,
-                "error": "未找到提取结果"
-            })
+            print("  ✗ 未找到提取结果")
+            results["results"].append({"sample_id": sample_id, "error": "未找到提取结果"})
             continue
 
         extracted_result = extracted_dict[key]
 
         try:
-            eval_result = evaluate_single(
-                golden_sample,
-                extracted_result,
-                use_llm_judge,
-                model
-            )
+            eval_result = evaluate_single(golden_sample, extracted_result, use_llm_judge, model)
             results["results"].append(eval_result)
             scores.append(eval_result["final_score"])
             print(f"  ✓ 评分: {eval_result['final_score']:.1f}")
 
         except Exception as e:
             print(f"  ✗ 评估失败: {e}")
-            results["results"].append({
-                "sample_id": sample_id,
-                "error": str(e)
-            })
+            results["results"].append({"sample_id": sample_id, "error": str(e)})
 
     # 4. 计算汇总统计
     if scores:
         avg_score = sum(scores) / len(scores)
         # 简化的 Precision/Recall 计算（基于边界匹配）
         acceptable_count = sum(
-            1 for r in results["results"]
+            1
+            for r in results["results"]
             if "boundary_match" in r and r["boundary_match"]["is_acceptable"]
         )
         precision = recall = acceptable_count / len(scores)
@@ -490,7 +472,7 @@ def run_evaluation(
         "avg_score": round(avg_score, 2),
         "precision": round(precision, 3),
         "recall": round(recall, 3),
-        "f1": round(f1, 3)
+        "f1": round(f1, 3),
     }
 
     # 5. 保存结果
@@ -500,7 +482,7 @@ def run_evaluation(
     with open(output_path_obj, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    print(f"\n评估完成:")
+    print("\n评估完成:")
     print(f"  总样本: {total}")
     print(f"  成功评估: {len(scores)}")
     print(f"  平均分: {avg_score:.2f}")
@@ -543,21 +525,21 @@ def main():
 
     # 查看摘要
     python scripts/evaluate_extraction.py --summary data/evaluation_results.json
-        """
+        """,
     )
 
-    parser.add_argument("--golden", type=str, default="data/golden_set.json",
-                        help="黄金数据集路径")
-    parser.add_argument("--source", type=str, default="duckdb",
-                        help="提取结果来源 (duckdb | JSON文件路径)")
-    parser.add_argument("--output", type=str, default="data/evaluation_results.json",
-                        help="评估结果输出路径")
-    parser.add_argument("--use-llm-judge", action="store_true",
-                        help="启用 LLM 评估（默认仅规则评估）")
-    parser.add_argument("--model", type=str, default="claude-sonnet",
-                        help="LLM 模型标识")
-    parser.add_argument("--summary", type=str,
-                        help="打印评估结果摘要")
+    parser.add_argument("--golden", type=str, default="data/golden_set.json", help="黄金数据集路径")
+    parser.add_argument(
+        "--source", type=str, default="duckdb", help="提取结果来源 (duckdb | JSON文件路径)"
+    )
+    parser.add_argument(
+        "--output", type=str, default="data/evaluation_results.json", help="评估结果输出路径"
+    )
+    parser.add_argument(
+        "--use-llm-judge", action="store_true", help="启用 LLM 评估（默认仅规则评估）"
+    )
+    parser.add_argument("--model", type=str, default="claude-sonnet", help="LLM 模型标识")
+    parser.add_argument("--summary", type=str, help="打印评估结果摘要")
 
     args = parser.parse_args()
 
@@ -571,7 +553,7 @@ def main():
             extraction_source=args.source,
             output_path=args.output,
             use_llm_judge=args.use_llm_judge,
-            model=args.model
+            model=args.model,
         )
     except Exception as e:
         print(f"错误: {e}", file=sys.stderr)

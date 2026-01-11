@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import tempfile
-from datetime import date
 from pathlib import Path
 
 import pytest
@@ -35,7 +34,7 @@ class TestCompaniesTable:
 
     def test_upsert_company_insert(self, temp_db):
         """测试新增公司"""
-        from annual_report_mda.db import upsert_company, get_company
+        from annual_report_mda.db import get_company, upsert_company
 
         upsert_company(
             temp_db,
@@ -54,7 +53,7 @@ class TestCompaniesTable:
 
     def test_upsert_company_update(self, temp_db):
         """测试更新公司信息"""
-        from annual_report_mda.db import upsert_company, get_company
+        from annual_report_mda.db import get_company, upsert_company
 
         # 首次插入
         upsert_company(
@@ -88,7 +87,7 @@ class TestReportsTable:
 
     def test_insert_report_new(self, temp_db):
         """测试新增年报记录"""
-        from annual_report_mda.db import insert_report, get_report
+        from annual_report_mda.db import get_report, insert_report
 
         is_new = insert_report(
             temp_db,
@@ -131,7 +130,7 @@ class TestReportsTable:
 
     def test_update_report_status(self, temp_db):
         """测试更新年报状态"""
-        from annual_report_mda.db import insert_report, update_report_status, get_report
+        from annual_report_mda.db import get_report, insert_report, update_report_status
 
         insert_report(
             temp_db,
@@ -178,10 +177,10 @@ class TestPendingTasksViews:
     def test_get_pending_downloads(self, temp_db):
         """测试待下载任务查询"""
         from annual_report_mda.db import (
-            insert_report,
-            upsert_company,
             get_pending_downloads,
+            insert_report,
             update_report_status,
+            upsert_company,
         )
 
         # 准备数据
@@ -207,10 +206,10 @@ class TestPendingTasksViews:
     def test_get_pending_converts(self, temp_db):
         """测试待转换任务查询"""
         from annual_report_mda.db import (
-            insert_report,
-            upsert_company,
             get_pending_converts,
+            insert_report,
             update_report_status,
+            upsert_company,
         )
 
         upsert_company(temp_db, stock_code="600519", short_name="贵州茅台")
@@ -243,17 +242,23 @@ class TestPendingTasksViews:
             insert_report(temp_db, stock_code=code, year=2023, url=f"https://a.com/{code}.pdf")
 
         update_report_status(temp_db, stock_code="600519", year=2023, download_status="success")
-        update_report_status(temp_db, stock_code="000001", year=2023, download_status="success", convert_status="success")
+        update_report_status(
+            temp_db,
+            stock_code="000001",
+            year=2023,
+            download_status="success",
+            convert_status="success",
+        )
 
         # 查询进度视图
         result = temp_db.execute("SELECT * FROM reports_progress WHERE year = 2023").fetchone()
         assert result is not None
         # year, total, downloaded, converted, extracted
         assert result[0] == 2023  # year
-        assert result[1] == 3     # total
-        assert result[2] == 2     # downloaded
-        assert result[3] == 1     # converted
-        assert result[4] == 0     # extracted
+        assert result[1] == 3  # total
+        assert result[2] == 2  # downloaded
+        assert result[3] == 1  # converted
+        assert result[4] == 0  # extracted
 
 
 class TestMigrationIdempotency:
@@ -274,7 +279,9 @@ class TestMigrationIdempotency:
             new_count = 0
             for stock_code, name, year, url in data:
                 upsert_company(temp_db, stock_code=stock_code, short_name=name)
-                if insert_report(temp_db, stock_code=stock_code, year=year, url=url, source="excel_migration"):
+                if insert_report(
+                    temp_db, stock_code=stock_code, year=year, url=url, source="excel_migration"
+                ):
                     new_count += 1
             return new_count
 

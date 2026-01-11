@@ -1,13 +1,12 @@
 """
 Pytest fixtures for MD&A extractor tests.
 """
-import os
+
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
-
 
 # 获取 fixtures 目录路径
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -92,7 +91,8 @@ def temp_dir() -> Generator[Path, None, None]:
 @pytest.fixture
 def sample_mda_text() -> str:
     """返回标准的 MD&A 文本样本，用于评分测试。"""
-    return """
+    return (
+        """
 第三节 管理层讨论与分析
 
 一、报告期内公司所处行业情况
@@ -110,7 +110,9 @@ def sample_mda_text() -> str:
 
 公司将持续推进技术创新，提升产品竞争力。
 行业展望良好，预计市场规模将持续扩大。
-""" * 10  # 重复以达到足够长度
+"""
+        * 10
+    )  # 重复以达到足够长度
 
 
 @pytest.fixture
@@ -122,7 +124,8 @@ def short_text() -> str:
 @pytest.fixture
 def text_with_dots() -> str:
     """返回含目录引导线的文本。"""
-    return """
+    return (
+        """
 目 录
 
 第一节 重要提示 ...................... 1
@@ -135,13 +138,16 @@ def text_with_dots() -> str:
 第八节 董事、监事、高级管理人员 ...... 45
 第九节 公司债券相关情况 .............. 50
 第十节 财务报告 ...................... 55
-""" * 50  # 重复以达到足够长度
+"""
+        * 50
+    )  # 重复以达到足够长度
 
 
 @pytest.fixture
 def text_with_table_residue() -> str:
     """返回含表格残留的文本。"""
-    return """
+    return (
+        """
 公司主营业务收入情况
 
 123.45
@@ -151,13 +157,16 @@ def text_with_table_residue() -> str:
 345.67
 
 以上为主要财务数据。
-""" * 50  # 重复以达到足够长度
+"""
+        * 50
+    )  # 重复以达到足够长度
 
 
 @pytest.fixture
 def text_with_header_noise() -> str:
     """返回含页眉干扰的文本。"""
-    return """
+    return (
+        """
 贵州茅台2023年年度报告
 公司主营业务收入同比增长10%。
 贵州茅台2023年年度报告
@@ -168,4 +177,6 @@ def text_with_header_noise() -> str:
 展望未来发展。
 贵州茅台2023年年度报告
 行业发展良好。
-""" * 20  # 重复以达到足够长度
+"""
+        * 20
+    )  # 重复以达到足够长度

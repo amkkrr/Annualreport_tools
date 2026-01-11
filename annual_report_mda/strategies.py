@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence
+from typing import Any
 
 from .scorer import MDA_PATTERNS, MDA_TITLES, NEXT_TITLES, ScoreDetail, calculate_mda_score
-
 
 MAX_PAGES_DEFAULT = 15
 MAX_CHARS_DEFAULT = 120_000
@@ -22,9 +22,9 @@ _SECTION_LEVEL_RE = re.compile(r"^第[一二三四五六七八九十百零\d]+[�
 @dataclass(frozen=True)
 class TocHit:
     printed_page_start: int
-    printed_page_end: Optional[int]
+    printed_page_end: int | None
     page_index_start: int
-    page_index_end: Optional[int]
+    page_index_end: int | None
 
 
 @dataclass(frozen=True)
@@ -37,14 +37,14 @@ class ExtractionResult:
     page_index_end: int
     page_count: int
 
-    printed_page_start: Optional[int]
-    printed_page_end: Optional[int]
+    printed_page_start: int | None
+    printed_page_end: int | None
 
     hit_start: str
-    hit_end: Optional[str]
+    hit_end: str | None
 
     is_truncated: bool
-    truncation_reason: Optional[str]
+    truncation_reason: str | None
 
     used_rule_type: str  # "generic" | "custom" | "toc"
 
@@ -150,8 +150,8 @@ def _extract_between(
     *,
     start_page_index: int,
     start_line_index: int,
-    end_page_index: Optional[int],
-    end_line_index: Optional[int],
+    end_page_index: int | None,
+    end_line_index: int | None,
 ) -> tuple[str, int, int]:
     if end_page_index is None:
         end_page_index = len(pages) - 1
@@ -183,11 +183,11 @@ def _apply_limits(
     start_line_index: int,
     max_pages: int,
     max_chars: int,
-    end_page_index: Optional[int],
-    end_line_index: Optional[int],
-) -> tuple[str, int, int, bool, Optional[str]]:
+    end_page_index: int | None,
+    end_line_index: int | None,
+) -> tuple[str, int, int, bool, str | None]:
     is_truncated = False
-    truncation_reason: Optional[str] = None
+    truncation_reason: str | None = None
 
     page_limit_end_exclusive = min(len(pages), start_page_index + max_pages)
 
@@ -256,11 +256,11 @@ def _try_extract_with_custom_rule(
     pages: Sequence[str],
     *,
     start_pattern: str,
-    end_pattern: Optional[str],
+    end_pattern: str | None,
     max_pages: int,
     max_chars: int,
     page_break_kind: str,
-) -> Optional[ExtractionResult]:
+) -> ExtractionResult | None:
     start_re = re.compile(re.escape(start_pattern))
     end_re = re.compile(re.escape(end_pattern)) if end_pattern else None
 
@@ -272,9 +272,9 @@ def _try_extract_with_custom_rule(
             if not start_re.search(line):
                 continue
 
-            end_page_index: Optional[int] = None
-            end_line_index: Optional[int] = None
-            hit_end: Optional[str] = None
+            end_page_index: int | None = None
+            end_line_index: int | None = None
+            hit_end: str | None = None
 
             if end_re is not None:
                 for p in range(page_index, min(len(pages), page_index + max_pages)):
@@ -328,9 +328,9 @@ def _try_extract_with_custom_rule(
 def parse_toc_for_page_range(
     pages: Sequence[str],
     *,
-    page_numbers: Optional[Sequence[Optional[int]]] = None,
+    page_numbers: Sequence[int | None] | None = None,
     scan_pages: int = 15,
-) -> Optional[TocHit]:
+) -> TocHit | None:
     if not pages:
         return None
 
@@ -348,8 +348,8 @@ def parse_toc_for_page_range(
     toc_text = "\n".join(toc_pages)
     lines = [ln.strip() for ln in toc_text.splitlines() if ln.strip()]
 
-    printed_start: Optional[int] = None
-    printed_end: Optional[int] = None
+    printed_start: int | None = None
+    printed_end: int | None = None
 
     for ln in lines:
         if not _TOC_DOTLINE_RE.search(ln):
@@ -371,7 +371,7 @@ def parse_toc_for_page_range(
     if not page_numbers:
         return None
 
-    def _map_printed_to_index(pn: int) -> Optional[int]:
+    def _map_printed_to_index(pn: int) -> int | None:
         for idx, printed in enumerate(page_numbers):
             if printed == pn:
                 return idx
@@ -397,7 +397,7 @@ def extract_mda_from_pages(
     max_pages: int = MAX_PAGES_DEFAULT,
     max_chars: int = MAX_CHARS_DEFAULT,
     page_break_kind: str = "none",
-) -> Optional[ExtractionResult]:
+) -> ExtractionResult | None:
     if not pages:
         return None
 
@@ -444,9 +444,9 @@ def extract_mda_from_pages(
         max_page_index_exclusive=max_page_index_exclusive,
     )
 
-    end_page_index: Optional[int] = None
-    end_line_index: Optional[int] = None
-    hit_end: Optional[str] = None
+    end_page_index: int | None = None
+    end_line_index: int | None = None
+    hit_end: str | None = None
 
     if end_hits:
         end_page_index, end_line_index, hit_end = end_hits[0]
@@ -486,13 +486,13 @@ def extract_mda_from_pages(
 def extract_mda_iterative(
     pages: Sequence[str],
     *,
-    page_numbers: Optional[Sequence[Optional[int]]] = None,
+    page_numbers: Sequence[int | None] | None = None,
     page_break_kind: str = "none",
     max_pages: int = MAX_PAGES_DEFAULT,
     max_chars: int = MAX_CHARS_DEFAULT,
-    custom_start_pattern: Optional[str] = None,
-    custom_end_pattern: Optional[str] = None,
-) -> Optional[ExtractionResult]:
+    custom_start_pattern: str | None = None,
+    custom_end_pattern: str | None = None,
+) -> ExtractionResult | None:
     candidates: list[ExtractionResult] = []
 
     if custom_start_pattern:

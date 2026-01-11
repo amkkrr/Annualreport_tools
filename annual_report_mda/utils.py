@@ -3,9 +3,8 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 try:
     from dotenv import load_dotenv  # type: ignore
@@ -63,7 +62,7 @@ def load_dotenv_if_present(dotenv_path: str | Path = ".env") -> bool:
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def sha256_text(text: str) -> str:
@@ -74,7 +73,7 @@ def ensure_parent_dir(path: str | Path) -> None:
     Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 
 
-def to_int(value: str) -> Optional[int]:
+def to_int(value: str) -> int | None:
     try:
         return int(value)
     except (TypeError, ValueError):

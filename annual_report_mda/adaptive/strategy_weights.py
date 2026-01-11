@@ -1,13 +1,13 @@
 """
 策略权重自适应
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import random
 from pathlib import Path
-
 
 _LOG = logging.getLogger(__name__)
 

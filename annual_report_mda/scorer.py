@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Optional, Sequence
-
 
 MDA_TITLES: list[str] = [
     "董事会报告",
@@ -52,7 +51,9 @@ class ScoreDetail:
     length: int
 
 
-def calculate_mda_score(text: str, *, keywords: Optional[Sequence[str]] = None) -> tuple[float, ScoreDetail]:
+def calculate_mda_score(
+    text: str, *, keywords: Sequence[str] | None = None
+) -> tuple[float, ScoreDetail]:
     """
     计算文本“像 MD&A 的程度”(0.0-1.0)。
     - 关键词命中（营收、同比、现金流等）是正向特征
@@ -70,7 +71,9 @@ def calculate_mda_score(text: str, *, keywords: Optional[Sequence[str]] = None) 
     keyword_hit_count = sum(1 for k in keywords_list if k and k in text)
     keyword_total = max(len(keywords_list), 1)
 
-    dots_count = text.count("...") + text.count("…") + text.count("……") + len(re.findall(r"\.{4,}", text))
+    dots_count = (
+        text.count("...") + text.count("…") + text.count("……") + len(re.findall(r"\.{4,}", text))
+    )
 
     score = (keyword_hit_count / keyword_total) * 0.8
     if dots_count < 10:
@@ -107,7 +110,8 @@ _VALID_CHARS_RE = re.compile(
     r"a-zA-Z"  # 英文
     r"0-9"  # 数字
     r"\s"  # 空白
-    r"。，、；：？！""''【】（）《》"  # 中文标点
+    r"。，、；：？！"
+    "''【】（）《》"  # 中文标点
     r".,;:?!\"'()\[\]{}<>"  # 英文标点
     r"\-+=%$#@&*/_~`\n\r\t"  # 特殊符号
     r"]"
@@ -181,9 +185,7 @@ def detect_header_noise(text: str) -> tuple[bool, list[str]]:
             short_line_counts[stripped] = short_line_counts.get(stripped, 0) + 1
 
     repeated = [
-        line
-        for line, count in short_line_counts.items()
-        if count > _HEADER_REPEAT_THRESHOLD
+        line for line, count in short_line_counts.items() if count > _HEADER_REPEAT_THRESHOLD
     ]
 
     return len(repeated) > 0, repeated
@@ -285,8 +287,8 @@ class QualityScore:
 
 def calculate_quality_score(
     text: str,
-    quality_flags: Optional[Sequence[str]],
-    score_detail: Optional[ScoreDetail],
+    quality_flags: Sequence[str] | None,
+    score_detail: ScoreDetail | None,
 ) -> QualityScore:
     """
     计算综合质量评分。
@@ -392,7 +394,7 @@ def calculate_text_similarity(text1: str, text2: str) -> float:
 
 def detect_yoy_change(
     current_text: str,
-    prev_text: Optional[str],
+    prev_text: str | None,
     *,
     similarity_threshold: float = YOY_SIMILARITY_THRESHOLD,
 ) -> tuple[bool, float]:

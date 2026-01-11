@@ -15,7 +15,7 @@ import logging
 import os
 import platform
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
@@ -98,13 +98,13 @@ class CrawlerRequestConfig(BaseModel):
 class CrawlerFiltersConfig(BaseModel):
     """爬虫过滤条件配置。"""
 
-    plates: List[str] = Field(default_factory=lambda: ["sz", "sh"])
+    plates: list[str] = Field(default_factory=lambda: ["sz", "sh"])
     trade: str = ""
-    exclude_keywords: List[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
 
     @field_validator("plates")
     @classmethod
-    def check_plates(cls, v: List[str]) -> List[str]:
+    def check_plates(cls, v: list[str]) -> list[str]:
         valid_plates = {"sz", "sh", "szmb", "shmb", "szcy", "shkcp", "bj"}
         for plate in v:
             if plate not in valid_plates:
@@ -122,14 +122,14 @@ class CrawlerOutputConfig(BaseModel):
 class CrawlerConfig(BaseModel):
     """爬虫模块配置。"""
 
-    target_years: List[int] = Field(min_length=1)
+    target_years: list[int] = Field(min_length=1)
     request: CrawlerRequestConfig = Field(default_factory=CrawlerRequestConfig)
     filters: CrawlerFiltersConfig = Field(default_factory=CrawlerFiltersConfig)
     output: CrawlerOutputConfig = Field(default_factory=CrawlerOutputConfig)
 
     @field_validator("target_years")
     @classmethod
-    def check_years(cls, v: List[int]) -> List[int]:
+    def check_years(cls, v: list[int]) -> list[int]:
         for year in v:
             if year < 1990 or year > 2100:
                 raise ValueError(f"Year {year} is out of reasonable range [1990, 2100]")
@@ -146,7 +146,7 @@ class DownloaderRequestConfig(BaseModel):
     max_retries: int = Field(default=3, ge=0, le=10)
     chunk_size: int = Field(default=8192, ge=1024, le=1048576)
     stream: bool = True
-    headers: Dict[str, str] = Field(default_factory=lambda: {"User-Agent": "Mozilla/5.0"})
+    headers: dict[str, str] = Field(default_factory=lambda: {"User-Agent": "Mozilla/5.0"})
 
 
 class DownloaderPathsConfig(BaseModel):
@@ -168,7 +168,7 @@ class DownloaderBehaviorConfig(BaseModel):
 class DownloaderConfig(BaseModel):
     """下载与转换模块配置。"""
 
-    processes: Optional[int] = Field(default=None, ge=1, le=64)
+    processes: int | None = Field(default=None, ge=1, le=64)
     paths: DownloaderPathsConfig = Field(default_factory=DownloaderPathsConfig)
     behavior: DownloaderBehaviorConfig = Field(default_factory=DownloaderBehaviorConfig)
     request: DownloaderRequestConfig = Field(default_factory=DownloaderRequestConfig)
@@ -187,7 +187,7 @@ class AnalysisPathsConfig(BaseModel):
 class AnalysisConfig(BaseModel):
     """文本分析模块配置。"""
 
-    keywords: List[str] = Field(min_length=1)
+    keywords: list[str] = Field(min_length=1)
     paths: AnalysisPathsConfig = Field(default_factory=AnalysisPathsConfig)
 
 
@@ -229,7 +229,7 @@ class GlobalConfig(BaseModel):
     mda: MdaConfig = Field(default_factory=MdaConfig)
 
     @model_validator(mode="after")
-    def normalize_paths(self) -> "GlobalConfig":
+    def normalize_paths(self) -> GlobalConfig:
         """在模型验证后执行路径归一化和安全校验。"""
         normalizer = PathNormalizer(self.project.workspace_root)
 
@@ -298,10 +298,10 @@ def load_config(path: str = "config.yaml") -> GlobalConfig:
         if example_path.exists():
             hint = f"\n提示: 可复制模板文件创建配置:\n  cp {example_path} {config_path}"
         raise FileNotFoundError(
-            f"配置文件不存在: {config_path}{hint}\n" f"或使用 --config 参数指定配置文件路径"
+            f"配置文件不存在: {config_path}{hint}\n或使用 --config 参数指定配置文件路径"
         )
 
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
     if raw is None:
@@ -313,7 +313,7 @@ def load_config(path: str = "config.yaml") -> GlobalConfig:
         raise ValueError(format_validation_error(e, str(config_path))) from e
 
 
-def load_config_with_fallback() -> Optional[GlobalConfig]:
+def load_config_with_fallback() -> GlobalConfig | None:
     """尝试加载配置文件，失败时返回 None 并发出警告。
 
     此函数用于迁移期间保持向后兼容性。
@@ -323,7 +323,9 @@ def load_config_with_fallback() -> Optional[GlobalConfig]:
     except FileNotFoundError:
         import warnings
 
-        warnings.warn("未找到 config.yaml，使用内置默认值（已弃用）", DeprecationWarning, stacklevel=2)
+        warnings.warn(
+            "未找到 config.yaml，使用内置默认值（已弃用）", DeprecationWarning, stacklevel=2
+        )
         return None
 
 
@@ -339,7 +341,7 @@ def log_config_summary(config: GlobalConfig, logger: logging.Logger) -> None:
 # ============ CLI 覆盖 ============
 
 
-def apply_cli_overrides(config: GlobalConfig, overrides: Dict[str, Any]) -> GlobalConfig:
+def apply_cli_overrides(config: GlobalConfig, overrides: dict[str, Any]) -> GlobalConfig:
     """将 CLI 参数覆盖到配置对象（不可变更新）。
 
     Args:
@@ -361,7 +363,7 @@ def apply_cli_overrides(config: GlobalConfig, overrides: Dict[str, Any]) -> Glob
     if not overrides:
         return config
 
-    updates: Dict[str, Any] = {}
+    updates: dict[str, Any] = {}
 
     if "target_years" in overrides and overrides["target_years"]:
         crawler_dump = config.crawler.model_dump()

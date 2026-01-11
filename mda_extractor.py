@@ -3,19 +3,24 @@ from __future__ import annotations
 import argparse
 import logging
 import re
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any
 
 from annual_report_mda import EXTRACTOR_VERSION
-from annual_report_mda.data_manager import MDAUpsertRecord, compute_file_sha256, should_skip_incremental, upsert_mda_text
+from annual_report_mda.data_manager import (
+    MDAUpsertRecord,
+    compute_file_sha256,
+    should_skip_incremental,
+    upsert_mda_text,
+)
 from annual_report_mda.db import init_db, insert_extraction_error
 from annual_report_mda.scorer import calculate_quality_score
 from annual_report_mda.strategies import MAX_CHARS_DEFAULT, MAX_PAGES_DEFAULT, extract_mda_iterative
 from annual_report_mda.text_loader import load_pages
 from annual_report_mda.utils import configure_logging, load_dotenv_if_present
-
 
 _LOG = logging.getLogger(__name__)
 
@@ -30,7 +35,7 @@ def _iter_txt_files(root: Path) -> Iterable[Path]:
             yield path
 
 
-def _infer_stock_year(path: Path) -> tuple[Optional[str], Optional[int]]:
+def _infer_stock_year(path: Path) -> tuple[str | None, int | None]:
     parent = path.parent.name
     if parent.isdigit() and len(parent) == 6:
         stock = parent
@@ -56,7 +61,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="使用 config.yaml 配置文件运行（推荐）。",
     )
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         default="config.yaml",
         help="指定配置文件路径（默认 config.yaml，需配合 --use-config）。",
     )
@@ -65,18 +71,41 @@ def _build_parser() -> argparse.ArgumentParser:
     group.add_argument("--text", help="单文件模式：上游抽取的单个 *.txt。")
     group.add_argument("--dir", help="批量模式：扫描目录下所有 *.txt（递归）。")
 
-    parser.add_argument("--db", default="data/annual_reports.duckdb", help="DuckDB 路径（默认 data/annual_reports.duckdb）。")
-    parser.add_argument("--workers", type=int, default=None, help="并发数（默认从配置文件读取或 4）。")
-    parser.add_argument("--incremental", action="store_true", help="增量模式：幂等键已成功入库则跳过。")
+    parser.add_argument(
+        "--db",
+        default="data/annual_reports.duckdb",
+        help="DuckDB 路径（默认 data/annual_reports.duckdb）。",
+    )
+    parser.add_argument(
+        "--workers", type=int, default=None, help="并发数（默认从配置文件读取或 4）。"
+    )
+    parser.add_argument(
+        "--incremental", action="store_true", help="增量模式：幂等键已成功入库则跳过。"
+    )
     parser.add_argument("--dry-run", action="store_true", help="仅跑提取，不写入数据库。")
 
     parser.add_argument("--stock-code", help="覆盖自动解析的 stock_code（仅建议单文件调试用）。")
     parser.add_argument("--year", type=int, help="覆盖自动解析的 year（仅建议单文件调试用）。")
 
-    parser.add_argument("--max-pages", type=int, default=None, help=f"最大页数截断（默认从配置文件读取或 {MAX_PAGES_DEFAULT}）。")
-    parser.add_argument("--max-chars", type=int, default=None, help=f"最大字符截断（默认从配置文件读取或 {MAX_CHARS_DEFAULT}）。")
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help=f"最大页数截断（默认从配置文件读取或 {MAX_PAGES_DEFAULT}）。",
+    )
+    parser.add_argument(
+        "--max-chars",
+        type=int,
+        default=None,
+        help=f"最大字符截断（默认从配置文件读取或 {MAX_CHARS_DEFAULT}）。",
+    )
 
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="日志级别（默认 INFO）。")
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="日志级别（默认 INFO）。",
+    )
 
     # LLM 自适应学习参数组
     learn_group = parser.add_argument_group("LLM 自适应学习")
@@ -210,7 +239,7 @@ def _extract_one_worker(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _submit_jobs(
     *,
-    conn: "duckdb.DuckDBPyConnection",
+    conn: duckdb.DuckDBPyConnection,
     paths: list[Path],
     workers: int,
     incremental: bool,
@@ -238,7 +267,9 @@ def _submit_jobs(
             continue
 
         source_sha256 = compute_file_sha256(path)
-        if incremental and should_skip_incremental(conn, stock_code=stock_code, year=year, source_sha256=source_sha256):
+        if incremental and should_skip_incremental(
+            conn, stock_code=stock_code, year=year, source_sha256=source_sha256
+        ):
             _LOG.info("增量跳过: %s", path)
             continue
 
@@ -316,7 +347,9 @@ def _run_dry_run(args: argparse.Namespace) -> int:
     return _run_dry_run_internal(args, effective_workers, effective_max_pages, effective_max_chars)
 
 
-def _run_dry_run_internal(args: argparse.Namespace, workers: int, max_pages: int, max_chars: int) -> int:
+def _run_dry_run_internal(
+    args: argparse.Namespace, workers: int, max_pages: int, max_chars: int
+) -> int:
     """dry-run 内部实现。"""
     if args.text:
         path = Path(args.text)
@@ -331,7 +364,9 @@ def _run_dry_run_internal(args: argparse.Namespace, workers: int, max_pages: int
             year = year or inferred_year
 
         if stock_code is None or year is None:
-            raise SystemExit("dry-run 单文件模式无法推断 stock_code/year，请传 --stock-code 与 --year。")
+            raise SystemExit(
+                "dry-run 单文件模式无法推断 stock_code/year，请传 --stock-code 与 --year。"
+            )
 
         source_sha256 = compute_file_sha256(path)
         res = _extract_one_worker(
@@ -347,7 +382,9 @@ def _run_dry_run_internal(args: argparse.Namespace, workers: int, max_pages: int
             }
         )
         record = MDAUpsertRecord(**res["record"])
-        _LOG.info("dry-run: char_count=%s used_rule_type=%s", record.char_count, record.used_rule_type)
+        _LOG.info(
+            "dry-run: char_count=%s used_rule_type=%s", record.char_count, record.used_rule_type
+        )
         return 0
 
     root = Path(args.dir)
@@ -452,7 +489,9 @@ def _run_with_yaml_config(args: argparse.Namespace) -> int:
             raise SystemExit("单文件模式无法推断 stock_code/year，请传 --stock-code 与 --year。")
 
         source_sha256 = compute_file_sha256(path)
-        if incremental and should_skip_incremental(conn, stock_code=stock_code, year=year, source_sha256=source_sha256):
+        if incremental and should_skip_incremental(
+            conn, stock_code=stock_code, year=year, source_sha256=source_sha256
+        ):
             _LOG.info("增量跳过: %s", path)
             return 0
 
@@ -562,7 +601,7 @@ def _run_with_yaml_config(args: argparse.Namespace) -> int:
     return 0 if err_count == 0 else 2
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     load_dotenv_if_present()
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -582,7 +621,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     effective_max_chars = args.max_chars if args.max_chars is not None else MAX_CHARS_DEFAULT
 
     if args.dry_run:
-        return _run_dry_run_internal(args, effective_workers, effective_max_pages, effective_max_chars)
+        return _run_dry_run_internal(
+            args, effective_workers, effective_max_pages, effective_max_chars
+        )
 
     conn = init_db(args.db)
 
@@ -602,7 +643,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             raise SystemExit("单文件模式无法推断 stock_code/year，请传 --stock-code 与 --year。")
 
         source_sha256 = compute_file_sha256(path)
-        if args.incremental and should_skip_incremental(conn, stock_code=stock_code, year=year, source_sha256=source_sha256):
+        if args.incremental and should_skip_incremental(
+            conn, stock_code=stock_code, year=year, source_sha256=source_sha256
+        ):
             _LOG.info("增量跳过: %s", path)
             return 0
 
@@ -659,7 +702,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         record = MDAUpsertRecord(**res["record"])
         if args.dry_run:
-            _LOG.info("dry-run: char_count=%s used_rule_type=%s", record.char_count, record.used_rule_type)
+            _LOG.info(
+                "dry-run: char_count=%s used_rule_type=%s", record.char_count, record.used_rule_type
+            )
             return 0
 
         upsert_mda_text(conn, record)

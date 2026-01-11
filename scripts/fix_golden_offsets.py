@@ -4,6 +4,7 @@
 
 LLM 标注时提供的偏移量是估计值，需要根据实际标记位置重新计算。
 """
+
 import json
 from pathlib import Path
 
@@ -16,10 +17,20 @@ def find_marker_positions(text: str, marker: str) -> list[tuple[int, bool, bool]
     Returns:
         [(position, is_toc, is_reference), ...]
     """
-    import re
 
     # 引用词：如果标记前面有这些词，说明是引用而不是真正的章节标题
-    REFERENCE_PREFIXES = ("参见", "详见", "见本", "请参阅", "详情请见", "参考", "参阅", "查阅", "请查阅", "敬请查阅")
+    REFERENCE_PREFIXES = (
+        "参见",
+        "详见",
+        "见本",
+        "请参阅",
+        "详情请见",
+        "参考",
+        "参阅",
+        "查阅",
+        "请查阅",
+        "敬请查阅",
+    )
 
     positions = []
 
@@ -33,7 +44,7 @@ def find_marker_positions(text: str, marker: str) -> list[tuple[int, bool, bool]
         start = pos + 1
 
     # 方法2: 无空格版本匹配
-    marker_no_space = marker.replace(' ', '')
+    marker_no_space = marker.replace(" ", "")
     start = 0
     while True:
         pos = text.find(marker_no_space, start)
@@ -46,26 +57,19 @@ def find_marker_positions(text: str, marker: str) -> list[tuple[int, bool, bool]
     # 对每个位置判断是否为 TOC 或引用
     result = []
     for pos, _, _ in positions:
-        after = text[pos:pos+len(marker)+150]
+        after = text[pos : pos + len(marker) + 150]
 
         has_dotline = (
-            '...' in after or
-            '…' in after or
-            after.count('.') > 10 or
-            after.count('·') > 5
+            "..." in after or "…" in after or after.count(".") > 10 or after.count("·") > 5
         )
 
-        context = text[max(0, pos-200):pos+200]
-        dot_density = (
-            context.count('...') +
-            context.count('…') +
-            context.count('·') * 0.5
-        )
+        context = text[max(0, pos - 200) : pos + 200]
+        dot_density = context.count("...") + context.count("…") + context.count("·") * 0.5
 
         is_toc = has_dotline or dot_density > 10
 
         # 检查是否是引用（标记前面有引用词）
-        before = text[max(0, pos-20):pos]
+        before = text[max(0, pos - 20) : pos]
         is_reference = any(ref in before for ref in REFERENCE_PREFIXES)
 
         result.append((pos, is_toc, is_reference))
@@ -146,10 +150,8 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="修复 golden 数据集的偏移量")
-    parser.add_argument("--input", default="data/golden_set_draft.json",
-                        help="输入文件")
-    parser.add_argument("--output", default="data/golden_set_fixed.json",
-                        help="输出文件")
+    parser.add_argument("--input", default="data/golden_set_draft.json", help="输入文件")
+    parser.add_argument("--output", default="data/golden_set_fixed.json", help="输出文件")
 
     args = parser.parse_args()
 
@@ -172,7 +174,7 @@ def main():
             print(f"  [{sample_id}] 起始偏移: {original_start} -> {new_start}")
             fixed_count += 1
 
-        data["samples"][i-1] = fixed_sample
+        data["samples"][i - 1] = fixed_sample
 
     # 保存结果
     with open(args.output, "w", encoding="utf-8") as f:

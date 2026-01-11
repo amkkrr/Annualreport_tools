@@ -1,17 +1,15 @@
 """
 测试 scorer.py 模块的负向特征检测和综合质量评分功能。
 """
-import pytest
 
 from annual_report_mda.scorer import (
     ScoreDetail,
+    calculate_garbled_ratio,
     calculate_mda_score,
     calculate_quality_score,
     detect_header_noise,
     detect_negative_features,
     detect_table_residue,
-    calculate_garbled_ratio,
-    NEEDS_REVIEW_THRESHOLD,
 )
 
 
@@ -168,7 +166,9 @@ class TestCalculateQualityScore:
 
     def test_high_quality_text(self):
         text = "公司主营业务收入同比增长10%，毛利率保持稳定，现金流充裕。" * 100
-        score_detail = ScoreDetail(keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(text))
+        score_detail = ScoreDetail(
+            keyword_hit_count=5, keyword_total=7, dots_count=0, length=len(text)
+        )
         result = calculate_quality_score(text, quality_flags=[], score_detail=score_detail)
 
         assert result.score >= 80
@@ -176,7 +176,9 @@ class TestCalculateQualityScore:
 
     def test_low_quality_with_flags(self):
         text = "短文本"
-        score_detail = ScoreDetail(keyword_hit_count=0, keyword_total=7, dots_count=0, length=len(text))
+        score_detail = ScoreDetail(
+            keyword_hit_count=0, keyword_total=7, dots_count=0, length=len(text)
+        )
         result = calculate_quality_score(
             text,
             quality_flags=["FLAG_LENGTH_ABNORMAL", "FLAG_CONTENT_MISMATCH"],
@@ -203,28 +205,36 @@ class TestCalculateQualityScore:
 
     def test_dots_excess_penalty(self):
         text = "公司主营业务" + "......" * 50 + "收入增长"
-        score_detail = ScoreDetail(keyword_hit_count=3, keyword_total=7, dots_count=50, length=len(text))
+        score_detail = ScoreDetail(
+            keyword_hit_count=3, keyword_total=7, dots_count=50, length=len(text)
+        )
         result = calculate_quality_score(text, quality_flags=[], score_detail=score_detail)
 
         assert "dots_excess" in result.penalties
         assert result.penalties["dots_excess"] == 20
 
     def test_table_residue_penalty(self):
-        text = """
+        text = (
+            """
         业绩说明
         123.45
         678.90
         234.56
         其他信息正文内容
-        """ * 20  # 重复以达到足够长度
-        score_detail = ScoreDetail(keyword_hit_count=3, keyword_total=7, dots_count=0, length=len(text))
+        """
+            * 20
+        )  # 重复以达到足够长度
+        score_detail = ScoreDetail(
+            keyword_hit_count=3, keyword_total=7, dots_count=0, length=len(text)
+        )
         result = calculate_quality_score(text, quality_flags=[], score_detail=score_detail)
 
         assert "table_residue" in result.penalties
         assert result.penalties["table_residue"] == 15
 
     def test_multiple_penalties_accumulate(self):
-        text = """
+        text = (
+            """
         页眉干扰
         123.45
         678.90
@@ -235,8 +245,12 @@ class TestCalculateQualityScore:
         更多内容
         页眉干扰
         结束
-        """ * 10
-        score_detail = ScoreDetail(keyword_hit_count=0, keyword_total=7, dots_count=15, length=len(text))
+        """
+            * 10
+        )
+        score_detail = ScoreDetail(
+            keyword_hit_count=0, keyword_total=7, dots_count=15, length=len(text)
+        )
         result = calculate_quality_score(
             text,
             quality_flags=["FLAG_CONTENT_MISMATCH"],
@@ -249,7 +263,9 @@ class TestCalculateQualityScore:
 
     def test_score_never_negative(self):
         text = "乱码\x00\x01\x02\x03" * 100
-        score_detail = ScoreDetail(keyword_hit_count=0, keyword_total=7, dots_count=100, length=len(text))
+        score_detail = ScoreDetail(
+            keyword_hit_count=0, keyword_total=7, dots_count=100, length=len(text)
+        )
         result = calculate_quality_score(
             text,
             quality_flags=["FLAG_LENGTH_ABNORMAL", "FLAG_CONTENT_MISMATCH", "FLAG_TAIL_OVERLAP"],

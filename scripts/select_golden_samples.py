@@ -5,13 +5,15 @@
 用法:
     python scripts/select_golden_samples.py --output data/samples.json --count 100
 """
+
+import argparse
 import json
 import random
 import sys
-from pathlib import Path
 from collections import defaultdict
-import argparse
 from datetime import datetime
+from pathlib import Path
+
 import duckdb
 
 
@@ -62,13 +64,15 @@ def get_txt_files(txt_root: str) -> list[dict]:
             # 公司名可能包含下划线
             company_name = "_".join(parts[1:-1]) if len(parts) > 2 else parts[1]
 
-            files.append({
-                "txt_path": str(txt_file),
-                "stock_code": stock_code,
-                "year": year,
-                "company_name": company_name,
-                "file_size": txt_file.stat().st_size
-            })
+            files.append(
+                {
+                    "txt_path": str(txt_file),
+                    "stock_code": stock_code,
+                    "year": year,
+                    "company_name": company_name,
+                    "file_size": txt_file.stat().st_size,
+                }
+            )
 
     return files
 
@@ -103,13 +107,15 @@ def get_samples_from_duckdb(db_path: str) -> list[dict]:
         for row in results:
             txt_path = row[3]
             if Path(txt_path).exists():
-                samples.append({
-                    "txt_path": txt_path,
-                    "stock_code": row[0],
-                    "year": row[1],
-                    "company_name": row[2],
-                    "file_size": Path(txt_path).stat().st_size
-                })
+                samples.append(
+                    {
+                        "txt_path": txt_path,
+                        "stock_code": row[0],
+                        "year": row[1],
+                        "company_name": row[2],
+                        "file_size": Path(txt_path).stat().st_size,
+                    }
+                )
 
         return samples
     finally:
@@ -117,10 +123,7 @@ def get_samples_from_duckdb(db_path: str) -> list[dict]:
 
 
 def stratified_sample(
-    files: list[dict],
-    count: int = 100,
-    year_balance: bool = True,
-    size_diversity: bool = True
+    files: list[dict], count: int = 100, year_balance: bool = True, size_diversity: bool = True
 ) -> list[dict]:
     """
     分层抽样选取样本。
@@ -157,8 +160,11 @@ def stratified_sample(
                 # 按文件大小排序，选取不同大小的样本
                 sorted_files = sorted(year_files, key=lambda x: x["file_size"])
                 # 等间距抽样
-                indices = [int(i * (len(sorted_files) - 1) / (year_count - 1))
-                          for i in range(year_count)] if year_count > 1 else [0]
+                indices = (
+                    [int(i * (len(sorted_files) - 1) / (year_count - 1)) for i in range(year_count)]
+                    if year_count > 1
+                    else [0]
+                )
                 selected.extend([sorted_files[i] for i in indices[:year_count]])
             else:
                 # 随机抽样
@@ -186,32 +192,32 @@ def main():
         --source duckdb \\
         --output data/samples.json \\
         --count 100
-        """
+        """,
     )
 
-    parser.add_argument("--txt-root", type=str,
-                        default="outputs/annual_reports",
-                        help="TXT 文件根目录")
-    parser.add_argument("--source", type=str, default="filesystem",
-                        choices=["filesystem", "duckdb"],
-                        help="数据来源")
-    parser.add_argument("--db-path", type=str,
-                        default="data/annual_reports.duckdb",
-                        help="DuckDB 数据库路径")
-    parser.add_argument("--output", type=str,
-                        default="data/samples.json",
-                        help="输出样本列表路径")
-    parser.add_argument("--count", type=int, default=100,
-                        help="目标样本数量")
-    parser.add_argument("--seed", type=int, default=42,
-                        help="随机种子")
+    parser.add_argument(
+        "--txt-root", type=str, default="outputs/annual_reports", help="TXT 文件根目录"
+    )
+    parser.add_argument(
+        "--source",
+        type=str,
+        default="filesystem",
+        choices=["filesystem", "duckdb"],
+        help="数据来源",
+    )
+    parser.add_argument(
+        "--db-path", type=str, default="data/annual_reports.duckdb", help="DuckDB 数据库路径"
+    )
+    parser.add_argument("--output", type=str, default="data/samples.json", help="输出样本列表路径")
+    parser.add_argument("--count", type=int, default=100, help="目标样本数量")
+    parser.add_argument("--seed", type=int, default=42, help="随机种子")
 
     args = parser.parse_args()
 
     random.seed(args.seed)
 
     # 获取文件列表
-    print(f"正在扫描文件...")
+    print("正在扫描文件...")
 
     if args.source == "duckdb":
         try:
@@ -261,7 +267,7 @@ def main():
         "source": args.source,
         "total_available": len(files),
         "selected_count": len(selected),
-        "samples": selected
+        "samples": selected,
     }
 
     with open(output_path, "w", encoding="utf-8") as f:

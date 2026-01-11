@@ -1,18 +1,19 @@
 """
 Self-Refine 循环 - 迭代改进提取质量
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from annual_report_mda.llm.client import LLMClient, LLMJSONParseError
 from annual_report_mda.llm.prompts import (
-    SYSTEM_PROMPT,
     EVALUATE_EXTRACTION_PROMPT,
     SELF_REFINE_PROMPT,
+    SYSTEM_PROMPT,
 )
 
 if TYPE_CHECKING:
@@ -25,8 +26,9 @@ _LOG = logging.getLogger(__name__)
 @dataclass
 class RefineResult:
     """Self-Refine 结果"""
+
     success: bool
-    extraction: Optional["ExtractionResult"]
+    extraction: ExtractionResult | None
     iterations: int
     final_score: float
     history: list[dict] = field(default_factory=list)
@@ -51,8 +53,8 @@ class SelfRefineLoop:
         stock_code: str,
         year: int,
         *,
-        initial_extraction: Optional["ExtractionResult"] = None,
-        industry: Optional[str] = None,
+        initial_extraction: ExtractionResult | None = None,
+        industry: str | None = None,
     ) -> RefineResult:
         """
         执行 Self-Refine 循环。
@@ -83,7 +85,7 @@ class SelfRefineLoop:
                         pages,
                         custom_start_pattern=sp,
                         custom_end_pattern=ep,
-                    )
+                    ),
                 )
 
             if current_extraction is None:
@@ -105,13 +107,15 @@ class SelfRefineLoop:
 
             score = evaluation.get("total_score", 0)
 
-            history.append({
-                "iteration": iteration + 1,
-                "score": score,
-                "issues": evaluation.get("issues", []),
-                "start_pattern": current_start_pattern,
-                "end_pattern": current_end_pattern,
-            })
+            history.append(
+                {
+                    "iteration": iteration + 1,
+                    "score": score,
+                    "issues": evaluation.get("issues", []),
+                    "start_pattern": current_start_pattern,
+                    "end_pattern": current_end_pattern,
+                }
+            )
 
             # 3. 检查是否通过
             if score >= self.score_threshold:
@@ -153,7 +157,7 @@ class SelfRefineLoop:
 
     async def _evaluate(
         self,
-        extraction: "ExtractionResult",
+        extraction: ExtractionResult,
         stock_code: str,
         year: int,
     ) -> dict:
@@ -174,7 +178,7 @@ class SelfRefineLoop:
 
     async def _get_refinement(
         self,
-        extraction: "ExtractionResult",
+        extraction: ExtractionResult,
         evaluation: dict,
         pages: list[str],
         stock_code: str,
@@ -202,7 +206,7 @@ class SelfRefineLoop:
     def _get_context_snippet(
         self,
         pages: list[str],
-        extraction: "ExtractionResult",
+        extraction: ExtractionResult,
     ) -> str:
         """获取提取边界附近的上下文"""
         start_idx = max(0, (extraction.page_index_start or 0) - 1)
@@ -212,7 +216,7 @@ class SelfRefineLoop:
 
         # 开头部分
         for i in range(start_idx, min(start_idx + 2, len(pages))):
-            snippet_parts.append(f"=== 第 {i+1} 页 ===\n{pages[i][:1000]}")
+            snippet_parts.append(f"=== 第 {i + 1} 页 ===\n{pages[i][:1000]}")
 
         if end_idx - start_idx > 4:
             snippet_parts.append("... [中间内容省略] ...")
@@ -220,6 +224,6 @@ class SelfRefineLoop:
         # 结尾部分
         for i in range(max(start_idx + 2, end_idx - 2), end_idx):
             if i < len(pages):
-                snippet_parts.append(f"=== 第 {i+1} 页 ===\n{pages[i][-1000:]}")
+                snippet_parts.append(f"=== 第 {i + 1} 页 ===\n{pages[i][-1000:]}")
 
         return "\n\n".join(snippet_parts)

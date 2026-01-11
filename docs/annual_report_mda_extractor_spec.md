@@ -97,14 +97,14 @@ def calculate_mda_score(text: str) -> float:
     依据：长度适中、包含关键指标词、不包含大量无意义字符
     """
     if not text or len(text) < 500: return 0.0
-    
+
     # 关键词特征
     keywords = ['主营业务', '收入', '同比', '毛利率', '现金流', '行业', '展望']
     hit_count = sum(1 for k in keywords if k in text)
-    
+
     # 负面特征（避免提取到目录或表格堆砌区）
     dots_count = text.count('...') + text.count('…')
-    
+
     score = (hit_count / len(keywords)) * 0.8
     if dots_count < 10: score += 0.2
     return score
@@ -120,7 +120,7 @@ def extract_mda_iterative(pages_text: Sequence[str]):
 
     # --- Strategy 1: TOC Parsing (伪代码示意) ---
     # 扫描前 15 页，寻找 "管理层...15" 结构的行；若解析到目录页码，需先映射到 page_index_start/page_index_end
-    toc_hit = parse_toc_for_page_range(pages_text[:15]) 
+    toc_hit = parse_toc_for_page_range(pages_text[:15])
     if toc_hit:
         text = extract_by_pages(
             pages_text,
@@ -139,10 +139,10 @@ def extract_mda_iterative(pages_text: Sequence[str]):
     # --- 决策择优 ---
     # 按分数排序，返回最佳结果
     candidates.sort(key=lambda x: x['score'], reverse=True)
-    
+
     if candidates and candidates[0]['score'] > 0.4:
         return candidates[0]
-    
+
     return None # 均失败，标记需人工或 LLM 处理
 ```
 
@@ -358,7 +358,7 @@ FROM (
 WHERE rn = 1;
 
 -- 检查成功率 (L1 & L2)
-SELECT 
+SELECT
     COUNT(*) AS total,
     SUM(CASE WHEN quality_flags IS NULL THEN 1 ELSE 0 END) AS perfect_clean,
     ROUND(SUM(CASE WHEN quality_flags IS NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS clean_rate
@@ -449,7 +449,7 @@ HAVING years < 2;
 
 - 上游未做 OCR 的扫描件（通常会导致抽取文本为空或极短，本工具将其标记为失败）
 - 部分老年报格式混乱（2015 年前）
-- 章节名非标准命名的年报 
+- 章节名非标准命名的年报
 
 
 **优化方向**
@@ -458,7 +458,7 @@ HAVING years < 2;
 
 1. 增加章节名模式
 2. 基于页码目录定位
-3. 对失败案例用 LLM 辅助识别章节边界 
+3. 对失败案例用 LLM 辅助识别章节边界
 
 ---
 
