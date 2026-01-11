@@ -73,6 +73,8 @@
 | `scripts/download_samples.py`             | 下载黄金样本对应的年报文件                |
 | `scripts/backfill_quality_score.py`       | M2 验收 - 质量评分回填脚本                |
 | `scripts/migrate_mda_schema.py`           | M2 验收 - Schema 迁移脚本                 |
+| `annual_report_mda/llm/`                  | LLM 统一客户端，支持多提供商自动降级      |
+| `annual_report_mda/adaptive/`             | 自适应学习模块（Self-Refine, Few-shot）   |
 | `./res/AnnualReport_links_2004_2023.xlsx` | 涵盖2004-2023年的精选主表                 |
 
 ## 脚本索引（旧版编号）
