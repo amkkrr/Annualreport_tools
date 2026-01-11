@@ -140,21 +140,21 @@ duckdb data/annual_reports.duckdb "SELECT stock_code, year, quality_score FROM m
 
 ### 2.5.1 端到端测试验证（高优先）
 
-- [ ] `P1` 编写 `calculate_mda_score` 单元测试，覆盖各评分维度
-- [ ] `P1` 编写 `extract_mda_iterative` 单元测试，验证迭代策略逻辑
-- [ ] `P1` 创建集成测试：端到端跑测 + 增量逻辑验证
-- [ ] `P1` 准备 Mock 数据集：含/不含目录、含/不含页分隔符的样本
+- [x] `P1` 编写 `calculate_mda_score` 单元测试，覆盖各评分维度（完成于 2026-01-11）
+- [x] `P1` 编写 `extract_mda_iterative` 单元测试，验证迭代策略逻辑（完成于 2026-01-11）
+- [x] `P1` 创建集成测试：端到端跑测 + 增量逻辑验证（完成于 2026-01-11）
+- [x] `P1` 准备 Mock 数据集：含/不含目录、含/不含页分隔符的样本（完成于 2026-01-11）
 
 ### 2.5.2 质检增强
 
-- [ ] `P1` 实现 L3 时序校验（FLAG_YOY_CHANGE_HIGH），检测年际变化异常
-- [ ] `P1` 创建质检 SQL 视图 `mda_text_latest`，简化查询流程
+- [x] `P1` 实现 L3 时序校验（FLAG_YOY_CHANGE_HIGH），检测年际变化异常（完成于 2026-01-11）
+- [x] `P1` 创建质检 SQL 视图 `mda_text_latest`，简化查询流程（已存在于 db.py，完成于 2026-01-08）
 
 ### 2.5.3 文档与分支管理
 
-- [ ] `P1` 更新主 README.md，补充 `mda_extractor.py` 使用说明
+- [x] `P1` 更新主 README.md，补充 `mda_extractor.py` 使用说明（已完成，见 README.md）
 - [ ] `P2` 编写开发者指南，说明策略扩展方式
-- [ ] `P1` 合并 `feature/mda-extractor-spec` 分支到 `main`（或在 main 继续开发）
+- [x] `P1` 合并 `feature/mda-extractor-spec` 分支到 `main`（或在 main 继续开发）（在 main 开发）
 
 ### 2.5.4 LLM 自适应学习（规格书 §10）
 

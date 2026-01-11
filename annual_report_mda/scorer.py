@@ -333,3 +333,99 @@ def calculate_quality_score(
         needs_review=final_score < NEEDS_REVIEW_THRESHOLD,
         penalties=penalties,
     )
+
+
+# =============================================================================
+# L3 时序校验（年际变化检测）
+# =============================================================================
+
+# 时序校验阈值：相似度低于此值触发 FLAG_YOY_CHANGE_HIGH
+YOY_SIMILARITY_THRESHOLD = 0.3
+
+
+def calculate_text_similarity(text1: str, text2: str) -> float:
+    """
+    计算两段文本的相似度（Jaccard Index）。
+
+    使用字符级 n-gram（n=3）计算 Jaccard 相似度，
+    适用于中文文本的相似度比较。
+
+    Args:
+        text1: 文本 1
+        text2: 文本 2
+
+    Returns:
+        相似度 0.0-1.0，1.0 表示完全相同
+    """
+    if not text1 or not text2:
+        return 0.0
+
+    if text1 == text2:
+        return 1.0
+
+    # 使用字符级 3-gram
+    n = 3
+
+    def get_ngrams(text: str, n: int) -> set[str]:
+        """提取 n-gram 集合。"""
+        # 移除空白字符以减少噪音
+        cleaned = "".join(text.split())
+        if len(cleaned) < n:
+            return {cleaned} if cleaned else set()
+        return {cleaned[i : i + n] for i in range(len(cleaned) - n + 1)}
+
+    ngrams1 = get_ngrams(text1, n)
+    ngrams2 = get_ngrams(text2, n)
+
+    if not ngrams1 or not ngrams2:
+        return 0.0
+
+    # Jaccard Index: |A ∩ B| / |A ∪ B|
+    intersection = len(ngrams1 & ngrams2)
+    union = len(ngrams1 | ngrams2)
+
+    if union == 0:
+        return 0.0
+
+    return intersection / union
+
+
+def detect_yoy_change(
+    current_text: str,
+    prev_text: Optional[str],
+    *,
+    similarity_threshold: float = YOY_SIMILARITY_THRESHOLD,
+) -> tuple[bool, float]:
+    """
+    检测年际变化是否异常。
+
+    通过比较当年和上年 MD&A 文本的相似度，检测是否存在异常的年际变化。
+    如果相似度低于阈值，可能表示：
+    - 提取边界错误
+    - 公司发生重大变化
+    - 年报格式变化
+
+    Args:
+        current_text: 当年 MD&A 文本
+        prev_text: 上年 MD&A 文本（None 表示无上年数据，跳过校验）
+        similarity_threshold: 相似度阈值，低于此值触发异常标记
+
+    Returns:
+        (is_abnormal, similarity_score)
+        - is_abnormal: True 表示变化异常，应添加 FLAG_YOY_CHANGE_HIGH
+        - similarity_score: 计算的相似度分数
+    """
+    # 无上年数据，跳过校验
+    if prev_text is None:
+        return False, 1.0
+
+    # 空文本处理
+    if not current_text or not prev_text:
+        return False, 0.0
+
+    similarity = calculate_text_similarity(current_text, prev_text)
+
+    # 相似度低于阈值视为异常
+    is_abnormal = similarity < similarity_threshold
+
+    return is_abnormal, similarity
