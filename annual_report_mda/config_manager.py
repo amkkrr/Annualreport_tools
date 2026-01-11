@@ -215,6 +215,47 @@ class MdaConfig(BaseModel):
     behavior: MdaBehaviorConfig = Field(default_factory=MdaBehaviorConfig)
 
 
+# ============ 日志配置 ============
+
+
+class LoggingConfig(BaseModel):
+    """日志配置。"""
+
+    # 终端输出
+    enable_console: bool = Field(default=True, description="启用终端输出")
+    console_rich: bool = Field(default=True, description="使用 RichHandler 美化输出")
+
+    # 文件日志
+    enable_file: bool = Field(default=False, description="启用文件日志")
+    log_dir: Path = Field(default=Path("logs"), description="日志目录")
+    file_prefix: str = Field(
+        default="app",
+        pattern=r"^[a-zA-Z][a-zA-Z0-9_-]*$",
+        description="日志文件名前缀",
+    )
+
+    # 轮转设置
+    max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        ge=1024,
+        le=100 * 1024 * 1024,
+        description="单个日志文件最大字节数",
+    )
+    backup_count: int = Field(
+        default=7,
+        ge=1,
+        le=30,
+        description="保留的备份文件数量",
+    )
+
+    # 格式设置
+    file_format: str = Field(
+        default="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        description="文件日志格式",
+    )
+    date_format: str = Field(default="%Y-%m-%d %H:%M:%S", description="日期格式")
+
+
 # ============ 全局配置 ============
 
 
@@ -223,6 +264,7 @@ class GlobalConfig(BaseModel):
 
     project: ProjectConfig = Field(default_factory=ProjectConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     crawler: CrawlerConfig
     downloader: DownloaderConfig = Field(default_factory=DownloaderConfig)
     analysis: AnalysisConfig

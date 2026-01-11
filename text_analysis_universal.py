@@ -17,8 +17,9 @@ import re
 import jieba
 import xlwt
 
-# 日志配置
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+from annual_report_mda.utils import configure_logging
+
+_LOG = logging.getLogger(__name__)
 
 
 def extract_keywords(content: str, keywords: list[str]) -> tuple[list[int], int]:
@@ -131,6 +132,9 @@ def process_files(folder_path: str, keywords: list[str]) -> None:
 
 
 if __name__ == "__main__":
+    # Configure logging
+    configure_logging(level="INFO")
+
     # 设置要提取的关键词列表（可根据需要修改）
     keywords = [
         "人工智能",

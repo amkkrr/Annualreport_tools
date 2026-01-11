@@ -24,8 +24,9 @@ from typing import Any
 import openpyxl
 import requests
 
-# 日志配置
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+from annual_report_mda.utils import configure_logging
+
+_LOG = logging.getLogger(__name__)
 
 GZH = "【公众号：凌小添】"
 
@@ -157,14 +158,15 @@ class CNINFOClient:
 
             # 显示进度
             progress = (page_num / total_pages) * 100
-            print(
-                f"\r日期 {date_range}: {page_num}/{total_pages} 页 ({progress:.1f}%)",
-                end="",
-                flush=True,
+            logging.info(
+                "日期 %s: %d/%d 页 (%.1f%%)",
+                date_range,
+                page_num,
+                total_pages,
+                progress,
             )
 
-        print()  # 换行
-        logging.info(f"日期范围 {date_range} 完成，共获取 {len(all_results)} 条记录")
+        logging.info("日期范围 %s 完成，共获取 %d 条记录", date_range, len(all_results))
         return all_results
 
 
@@ -503,8 +505,13 @@ def _run_with_config(args: argparse.Namespace) -> None:
     if overrides:
         config = apply_cli_overrides(config, overrides)
 
-    if config.project.log_level:
-        logging.getLogger().setLevel(getattr(logging, config.project.log_level))
+    # Configure logging with config settings
+    from annual_report_mda.utils import configure_logging_from_config
+
+    configure_logging_from_config(
+        log_level=args.log_level or config.project.log_level,
+        logging_config=config.logging,
+    )
 
     log_config_summary(config, logging.getLogger())
 
@@ -550,6 +557,9 @@ def _run_with_config(args: argparse.Namespace) -> None:
 
 def _run_with_embedded_config() -> None:
     """使用脚本底部嵌入配置运行（旧版兼容）。"""
+    # Configure logging with defaults
+    configure_logging(level="INFO")
+
     # ==================== 配置区域 ====================
 
     # 目标年份
@@ -596,7 +606,7 @@ def _run_with_embedded_config() -> None:
             crawler = AnnualReportCrawler(config)
             crawler.run()
 
-            print(f"\n{year}年处理完成\n")
+            logging.info("%d年处理完成", year)
     else:
         config = CrawlerConfig(
             target_year=TARGET_YEAR,
@@ -614,7 +624,7 @@ def _run_with_embedded_config() -> None:
         crawler = AnnualReportCrawler(config)
         crawler.run()
 
-        print(f"\n{TARGET_YEAR}年处理完成\n")
+        logging.info("%d年处理完成", TARGET_YEAR)
 
 
 def main(argv: list[str]) -> None:
@@ -622,8 +632,8 @@ def main(argv: list[str]) -> None:
     parser = _build_arg_parser()
 
     if len(argv) == 1:
-        print("提示: 无参数运行将使用脚本内置配置。使用 --use-config 启用配置文件模式。")
-        print("      使用 --help 查看更多选项。\n")
+        logging.info("提示: 无参数运行将使用脚本内置配置。使用 --use-config 启用配置文件模式。")
+        logging.info("      使用 --help 查看更多选项。")
         _run_with_embedded_config()
         return
 

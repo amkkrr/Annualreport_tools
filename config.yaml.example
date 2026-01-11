@@ -8,6 +8,25 @@ project:
   # 默认日志级别: DEBUG, INFO, WARNING, ERROR
   log_level: "INFO"
 
+# 日志配置 (可选 - 默认只输出到终端)
+logging:
+  # 终端输出
+  enable_console: true
+  console_rich: true  # 使用 Rich 美化输出 (需要 rich 库)
+
+  # 文件日志 (默认关闭)
+  enable_file: false
+  log_dir: "logs"
+  file_prefix: "app"  # 生成文件名如 app.log, app.log.1, app.log.2
+
+  # 轮转设置
+  max_bytes: 10485760  # 10MB
+  backup_count: 7      # 保留最近 7 个文件
+
+  # 格式 (仅文件日志使用，终端由 Rich 控制)
+  file_format: "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
 # 数据库配置 (DuckDB)
 database:
   path: "data/annual_reports.duckdb"

@@ -38,8 +38,8 @@ def _import_or_raise(module_name: str, install_hint: str) -> Any:
 # 抑制pdfplumber的CropBox警告
 warnings.filterwarnings("ignore", message=".*CropBox.*")
 
-# 日志配置
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -1078,7 +1078,12 @@ def _run_with_yaml_config(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
     if config.project.log_level:
-        logging.getLogger().setLevel(getattr(logging, config.project.log_level))
+        from annual_report_mda.utils import configure_logging_from_config
+
+        configure_logging_from_config(
+            log_level=config.project.log_level,
+            logging_config=config.logging,
+        )
 
     log_config_summary(config, logging.getLogger())
 

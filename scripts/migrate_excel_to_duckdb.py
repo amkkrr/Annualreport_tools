@@ -17,10 +17,9 @@ import argparse
 import logging
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+from annual_report_mda.utils import configure_logging
+
+_LOG = logging.getLogger(__name__)
 
 
 def migrate_excel_to_duckdb(
@@ -156,4 +155,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    configure_logging(level="INFO")
     main()

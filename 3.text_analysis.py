@@ -21,7 +21,9 @@ from multiprocessing import Pool, cpu_count
 import jieba
 import xlwt
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+from annual_report_mda.utils import configure_logging
+
+_LOG = logging.getLogger(__name__)
 
 
 def extract_keywords(filename: str, keywords: list[str]) -> tuple[list[int], int]:
@@ -184,12 +186,12 @@ class KeywordAnalyzer:
                 self._write_result_row(result)
                 processed += 1
                 progress = (processed / total_files) * 100
-                print(f"\r当前进度: {progress:.2f}%", end="", flush=True)
+                logging.info("当前进度: %.2f%%", progress)
 
                 if self.config.chunk_size > 0 and processed % self.config.chunk_size == 0:
                     self._save_workbook()
 
-        print("\n分析完成，正在保存 Excel……")
+        logging.info("分析完成，正在保存 Excel……")
         self._save_workbook()
         logging.info("Excel 文件保存成功：%s", self.config.output_path)
 
@@ -271,10 +273,14 @@ def _run_with_config(args: argparse.Namespace) -> None:
         logging.error(str(e))
         raise SystemExit(1)
 
-    if args.log_level:
-        logging.getLogger().setLevel(getattr(logging, args.log_level))
-    elif config.project.log_level:
-        logging.getLogger().setLevel(getattr(logging, config.project.log_level))
+    # Configure logging
+    from annual_report_mda.utils import configure_logging_from_config
+
+    log_level = args.log_level or config.project.log_level
+    configure_logging_from_config(
+        log_level=log_level,
+        logging_config=config.logging,
+    )
 
     log_config_summary(config, logging.getLogger())
 
@@ -311,6 +317,9 @@ def _run_with_config(args: argparse.Namespace) -> None:
 
 def _run_with_embedded_config() -> None:
     """使用脚本底部嵌入配置运行（旧版兼容）。"""
+    # Configure logging with defaults
+    configure_logging(level="INFO")
+
     # 自定义关键词列表，可按需扩展/替换
     KEYWORDS = [
         "人工智能",
@@ -353,7 +362,7 @@ def _run_with_embedded_config() -> None:
     except Exception as exc:
         logging.error("文件处理失败: %s", exc)
 
-    print(
+    logging.info(
         "提示：如果程序没有任何输出，请检查路径及 TXT 文件命名格式（如 600519_贵州茅台_2019.txt）。"
     )
 
@@ -363,8 +372,8 @@ def main(argv: list[str]) -> None:
     parser = _build_arg_parser()
 
     if len(argv) == 1:
-        print("提示: 无参数运行将使用脚本内置配置。使用 --use-config 启用配置文件模式。")
-        print("      使用 --help 查看更多选项。\n")
+        logging.info("提示: 无参数运行将使用脚本内置配置。使用 --use-config 启用配置文件模式。")
+        logging.info("      使用 --help 查看更多选项。")
         _run_with_embedded_config()
         return
 
