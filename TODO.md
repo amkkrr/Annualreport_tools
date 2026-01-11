@@ -326,9 +326,9 @@ python 4.advanced_analysis.py lda --n-topics 10 --output results/lda_topics.json
 
 ### 4.2 日志系统完善
 
-- [ ] `P1` 引入 Python 标准 `logging` 模块，替代 `print` 输出
-- [ ] `P2` 统一使用 `RichHandler` 美化终端输出
-- [ ] `P2` 实现日志文件轮转（`RotatingFileHandler`），按天或按大小保存
+- [x] `P1` 引入 Python 标准 `logging` 模块，替代 `print` 输出（完成于 2026-01-11）
+- [x] `P2` 统一使用 `RichHandler` 美化终端输出（完成于 2026-01-11）
+- [x] `P2` 实现日志文件轮转（`RotatingFileHandler`），按天或按大小保存（完成于 2026-01-11）
 
 ### 4.3 界面与交互
 
