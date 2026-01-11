@@ -1,0 +1,6 @@
+# Streamlit WebUI Dependencies
+
+streamlit>=1.30.0
+duckdb>=0.9.0
+pandas>=2.0.0
+pyyaml>=6.0
