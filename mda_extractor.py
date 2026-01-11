@@ -78,6 +78,37 @@ def _build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="日志级别（默认 INFO）。")
 
+    # LLM 自适应学习参数组
+    learn_group = parser.add_argument_group("LLM 自适应学习")
+    learn_group.add_argument(
+        "--learn",
+        action="store_true",
+        help="启用 LLM 自适应学习模式，失败时自动调用 LLM 改进",
+    )
+    learn_group.add_argument(
+        "--llm-provider",
+        choices=["deepseek", "qwen", "claude", "openai", "auto"],
+        default="auto",
+        help="LLM 提供商 (默认 auto，按优先级降级)",
+    )
+    learn_group.add_argument(
+        "--max-refine",
+        type=int,
+        default=3,
+        help="Self-Refine 最大迭代次数 (默认 3)",
+    )
+    learn_group.add_argument(
+        "--score-threshold",
+        type=float,
+        default=70.0,
+        help="质量评分阈值，低于此值触发 refine (默认 70)",
+    )
+    learn_group.add_argument(
+        "--save-rules",
+        action="store_true",
+        help="将成功的 LLM 规则保存到 extraction_rules 表",
+    )
+
     return parser
 
 

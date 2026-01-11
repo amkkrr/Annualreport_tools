@@ -165,6 +165,38 @@ def _create_tables(conn: "duckdb.DuckDBPyConnection") -> None:
         """
     )
 
+    # === 策略统计表 (LLM 自适应学习) ===
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS strategy_stats (
+            strategy VARCHAR PRIMARY KEY,
+            attempts INTEGER DEFAULT 0,
+            success INTEGER DEFAULT 0,
+            last_updated TIMESTAMP
+        );
+        """
+    )
+
+    # === LLM 调用日志表 ===
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS llm_call_logs (
+            id INTEGER PRIMARY KEY,
+            stock_code VARCHAR,
+            year INTEGER,
+            provider VARCHAR,
+            model VARCHAR,
+            prompt_type VARCHAR,
+            prompt_tokens INTEGER,
+            completion_tokens INTEGER,
+            latency_ms INTEGER,
+            success BOOLEAN,
+            error_message TEXT,
+            created_at TIMESTAMP
+        );
+        """
+    )
+
 
 def _create_views(conn: "duckdb.DuckDBPyConnection") -> None:
     # === MDA 最新记录视图 ===
@@ -534,3 +566,130 @@ def get_report(
         return None
     columns = [desc[0] for desc in conn.description]
     return dict(zip(columns, result))
+
+
+# =============================================================================
+# LLM 相关表操作
+# =============================================================================
+
+
+def insert_llm_call_log(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    stock_code: str | None,
+    year: int | None,
+    provider: str,
+    model: str,
+    prompt_type: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    latency_ms: int,
+    success: bool,
+    error_message: str | None = None,
+) -> None:
+    """插入 LLM 调用日志。"""
+    conn.execute(
+        """
+        INSERT INTO llm_call_logs (
+            stock_code, year, provider, model, prompt_type,
+            prompt_tokens, completion_tokens, latency_ms,
+            success, error_message, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """,
+        (
+            stock_code,
+            year,
+            provider,
+            model,
+            prompt_type,
+            prompt_tokens,
+            completion_tokens,
+            latency_ms,
+            success,
+            error_message,
+            utc_now(),
+        ),
+    )
+
+
+def upsert_strategy_stats(
+    conn: "duckdb.DuckDBPyConnection",
+    strategy: str,
+    success: bool,
+) -> None:
+    """更新策略统计。"""
+    conn.execute(
+        """
+        INSERT INTO strategy_stats (strategy, attempts, success, last_updated)
+        VALUES (?, 1, ?, ?)
+        ON CONFLICT (strategy) DO UPDATE SET
+            attempts = strategy_stats.attempts + 1,
+            success = strategy_stats.success + CASE WHEN ? THEN 1 ELSE 0 END,
+            last_updated = ?;
+        """,
+        (
+            strategy,
+            1 if success else 0,
+            utc_now(),
+            success,
+            utc_now(),
+        ),
+    )
+
+
+def get_strategy_stats(
+    conn: "duckdb.DuckDBPyConnection",
+) -> dict[str, dict]:
+    """获取策略统计。"""
+    result = conn.execute("SELECT * FROM strategy_stats").fetchall()
+    if not result:
+        return {}
+
+    columns = [desc[0] for desc in conn.description]
+    stats = {}
+    for row in result:
+        row_dict = dict(zip(columns, row))
+        stats[row_dict["strategy"]] = {
+            "attempts": row_dict["attempts"],
+            "success": row_dict["success"],
+        }
+    return stats
+
+
+def upsert_extraction_rule(
+    conn: "duckdb.DuckDBPyConnection",
+    *,
+    stock_code: str,
+    year: int,
+    start_pattern: str,
+    end_pattern: str,
+    report_signature: str | None = None,
+    rule_source: str = "llm_learned",
+) -> None:
+    """插入或更新提取规则。"""
+    conn.execute(
+        """
+        INSERT INTO extraction_rules (
+            stock_code, year, report_signature,
+            start_pattern, end_pattern,
+            rule_source, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (stock_code, year) DO UPDATE SET
+            start_pattern = EXCLUDED.start_pattern,
+            end_pattern = EXCLUDED.end_pattern,
+            report_signature = EXCLUDED.report_signature,
+            rule_source = EXCLUDED.rule_source,
+            updated_at = EXCLUDED.updated_at;
+        """,
+        (
+            stock_code,
+            year,
+            report_signature,
+            start_pattern,
+            end_pattern,
+            rule_source,
+            utc_now(),
+        ),
+    )
