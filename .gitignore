@@ -37,6 +37,7 @@ docs/audits/
 *.TXT
 !requirements.txt
 !requirements-dev.txt
+!tests/fixtures/**/*.txt
 *.csv
 *.xlsx
 *.xlsm
