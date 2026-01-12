@@ -164,6 +164,7 @@ def get_counts() -> dict[str, int]:
     default_counts = {
         "pending_downloads": 0,
         "pending_converts": 0,
+        "pending_extractions": 0,
         "mda_needs_review": 0,
         "total_extracted": 0,
     }
@@ -178,6 +179,10 @@ def get_counts() -> dict[str, int]:
 
             default_counts["pending_converts"] = sqlite_conn.execute(
                 "SELECT COUNT(*) FROM reports WHERE download_status = 'success' AND convert_status = 'pending'"
+            ).fetchone()[0]
+
+            default_counts["pending_extractions"] = sqlite_conn.execute(
+                "SELECT COUNT(*) FROM reports WHERE convert_status = 'success' AND extract_status = 'pending'"
             ).fetchone()[0]
 
             default_counts["total_extracted"] = sqlite_conn.execute(

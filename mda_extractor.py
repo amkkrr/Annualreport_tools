@@ -273,15 +273,34 @@ def _submit_jobs(
             _LOG.info("增量跳过: %s", path)
             continue
 
-        rule_row = conn.execute(
-            """
-            SELECT start_pattern, end_pattern
-            FROM extraction_rules
-            WHERE stock_code = ? AND year = ?
-            LIMIT 1;
-            """,
-            (stock_code, year),
-        ).fetchone()
+        # In a federated setup, extraction_rules might be in SQLite (attached as 'meta')
+        # We try 'meta.extraction_rules' first if it's attached.
+        try:
+            rule_row = conn.execute(
+                """
+                SELECT start_pattern, end_pattern
+                FROM meta.extraction_rules
+                WHERE stock_code = ? AND year = ?
+                LIMIT 1;
+                """
+                if hasattr(conn, "execute")
+                else "",
+                (stock_code, year),
+            ).fetchone()
+        except Exception:
+            # Fallback to local table (e.g. in tests)
+            try:
+                rule_row = conn.execute(
+                    """
+                SELECT start_pattern, end_pattern
+                FROM extraction_rules
+                WHERE stock_code = ? AND year = ?
+                LIMIT 1;
+                """,
+                    (stock_code, year),
+                ).fetchone()
+            except Exception:
+                rule_row = None
 
         custom_start_pattern = rule_row[0] if rule_row else None
         custom_end_pattern = rule_row[1] if rule_row else None
@@ -649,15 +668,30 @@ def main(argv: list[str] | None = None) -> int:
             _LOG.info("增量跳过: %s", path)
             return 0
 
-        rule_row = conn.execute(
-            """
-            SELECT start_pattern, end_pattern
-            FROM extraction_rules
-            WHERE stock_code = ? AND year = ?
-            LIMIT 1;
-            """,
-            (stock_code, year),
-        ).fetchone()
+        # Try meta schema first, then local
+        try:
+            rule_row = conn.execute(
+                """
+                SELECT start_pattern, end_pattern
+                FROM meta.extraction_rules
+                WHERE stock_code = ? AND year = ?
+                LIMIT 1;
+                """,
+                (stock_code, year),
+            ).fetchone()
+        except Exception:
+            try:
+                rule_row = conn.execute(
+                    """
+                    SELECT start_pattern, end_pattern
+                    FROM extraction_rules
+                    WHERE stock_code = ? AND year = ?
+                    LIMIT 1;
+                    """,
+                    (stock_code, year),
+                ).fetchone()
+            except Exception:
+                rule_row = None
 
         custom_start_pattern = rule_row[0] if rule_row else None
         custom_end_pattern = rule_row[1] if rule_row else None
