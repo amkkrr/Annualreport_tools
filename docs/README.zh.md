@@ -82,6 +82,7 @@ pip install -r requirements.txt
 - `docs/convert_only_mode_user_guide.md`：纯转换模式用户使用指南
 - `docs/convert_only_mode_maintenance.md`：纯转换模式维护文档
 - `docs/convert_only_mode_spec_audit.md`：纯转换模式规格审计记录
+- `docs/webui_user_manual.md`：WebUI 可视化管理界面用户手册
 - `2.pdf_batch_converter.py`：命令行入口（无参数输出帮助；`--use-config` 兼容旧用法）
 
 ## Star历史
