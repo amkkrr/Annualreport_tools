@@ -7,6 +7,8 @@
     M2-04: 质量评分 - quality_score 字段有值
     M2-05: 低分标记 - needs_review = true when score < 60
     M2-06: 负向检测 - 表格残留等扣分
+
+注意: 在双数据库架构下，元数据存储在 SQLite，MDA 文本存储在 DuckDB。
 """
 
 from __future__ import annotations
@@ -19,13 +21,25 @@ import pytest
 
 
 @pytest.fixture
-def temp_db():
-    """创建临时数据库用于测试。"""
+def temp_sqlite():
+    """创建临时 SQLite 数据库用于元数据测试。"""
+    from annual_report_mda import sqlite_db
+
+    db_path = tempfile.mktemp(suffix=".db")
+    conn = sqlite_db.get_connection(db_path)
+    sqlite_db.init_db(conn)
+    yield conn
+    conn.close()
+    Path(db_path).unlink(missing_ok=True)
+
+
+@pytest.fixture
+def temp_duckdb():
+    """创建临时 DuckDB 数据库用于 MDA 文本测试。"""
     from annual_report_mda.db import init_db
 
     db_path = tempfile.mktemp(suffix=".duckdb")
-
-    conn = init_db(db_path)
+    conn = init_db(db_path, attach_sqlite=False)
     yield conn
     conn.close()
     Path(db_path).unlink(missing_ok=True)
@@ -34,45 +48,45 @@ def temp_db():
 class TestM2_01_FullPipelineStatusUpdates:
     """M2-01: 全流程驱动 - 验证状态流转"""
 
-    def test_status_fields_exist_in_reports_table(self, temp_db):
+    def test_status_fields_exist_in_reports_table(self, temp_sqlite):
         """验证 reports 表包含状态字段"""
-        result = temp_db.execute("PRAGMA table_info(reports)").fetchall()
+        result = temp_sqlite.execute("PRAGMA table_info(reports)").fetchall()
         columns = {row[1] for row in result}
 
         assert "download_status" in columns
         assert "convert_status" in columns
         assert "extract_status" in columns
 
-    def test_status_default_values(self, temp_db):
+    def test_status_default_values(self, temp_sqlite):
         """验证状态默认值为 pending"""
-        from annual_report_mda.db import get_report, insert_report
+        from annual_report_mda import sqlite_db
 
-        insert_report(
-            temp_db,
+        sqlite_db.insert_report(
+            temp_sqlite,
             stock_code="600519",
             year=2023,
             url="https://example.com/report.pdf",
         )
 
-        report = get_report(temp_db, "600519", 2023)
+        report = sqlite_db.get_report(temp_sqlite, "600519", 2023)
         assert report["download_status"] == "pending"
         assert report["convert_status"] == "pending"
         assert report["extract_status"] == "pending"
 
-    def test_status_updates_correctly(self, temp_db):
+    def test_status_updates_correctly(self, temp_sqlite):
         """验证状态更新正确"""
-        from annual_report_mda.db import get_report, insert_report, update_report_status
+        from annual_report_mda import sqlite_db
 
-        insert_report(
-            temp_db,
+        sqlite_db.insert_report(
+            temp_sqlite,
             stock_code="600519",
             year=2023,
             url="https://example.com/report.pdf",
         )
 
         # 更新下载状态
-        update_report_status(
-            temp_db,
+        sqlite_db.update_report_status(
+            temp_sqlite,
             stock_code="600519",
             year=2023,
             download_status="success",
@@ -80,14 +94,14 @@ class TestM2_01_FullPipelineStatusUpdates:
             downloaded_at=True,
         )
 
-        report = get_report(temp_db, "600519", 2023)
+        report = sqlite_db.get_report(temp_sqlite, "600519", 2023)
         assert report["download_status"] == "success"
         assert report["pdf_path"] == "/data/600519_2023.pdf"
         assert report["downloaded_at"] is not None
 
         # 更新转换状态
-        update_report_status(
-            temp_db,
+        sqlite_db.update_report_status(
+            temp_sqlite,
             stock_code="600519",
             year=2023,
             convert_status="success",
@@ -95,7 +109,7 @@ class TestM2_01_FullPipelineStatusUpdates:
             converted_at=True,
         )
 
-        report = get_report(temp_db, "600519", 2023)
+        report = sqlite_db.get_report(temp_sqlite, "600519", 2023)
         assert report["convert_status"] == "success"
         assert report["txt_path"] == "/data/600519_2023.txt"
 
@@ -103,7 +117,7 @@ class TestM2_01_FullPipelineStatusUpdates:
 class TestM2_02_ResumeFromInterruption:
     """M2-02: 断点续传 - 验证增量逻辑"""
 
-    def test_incremental_skip_already_processed(self, temp_db):
+    def test_incremental_skip_already_processed(self, temp_duckdb):
         """验证已处理的记录被跳过"""
         from annual_report_mda.data_manager import (
             MDAUpsertRecord,
@@ -127,31 +141,31 @@ class TestM2_02_ResumeFromInterruption:
             quality_score=85,
             needs_review=False,
         )
-        upsert_mda_text(temp_db, record)
+        upsert_mda_text(temp_duckdb, record)
 
         # 验证增量检查返回 True（应跳过）
         should_skip = should_skip_incremental(
-            temp_db,
+            temp_duckdb,
             stock_code="600519",
             year=2023,
             source_sha256="abc123",
         )
         assert should_skip is True
 
-    def test_incremental_process_new_file(self, temp_db):
+    def test_incremental_process_new_file(self, temp_duckdb):
         """验证新文件不被跳过"""
         from annual_report_mda.data_manager import should_skip_incremental
 
         # 没有记录时应返回 False（不跳过）
         should_skip = should_skip_incremental(
-            temp_db,
+            temp_duckdb,
             stock_code="600519",
             year=2023,
             source_sha256="new_hash_123",
         )
         assert should_skip is False
 
-    def test_incremental_reprocess_changed_file(self, temp_db):
+    def test_incremental_reprocess_changed_file(self, temp_duckdb):
         """验证修改后的文件被重新处理"""
         from annual_report_mda.data_manager import (
             MDAUpsertRecord,
@@ -174,11 +188,11 @@ class TestM2_02_ResumeFromInterruption:
             quality_score=85,
             needs_review=False,
         )
-        upsert_mda_text(temp_db, record)
+        upsert_mda_text(temp_duckdb, record)
 
         # 使用不同的 hash 检查，应返回 False（不跳过）
         should_skip = should_skip_incremental(
-            temp_db,
+            temp_duckdb,
             stock_code="600519",
             year=2023,
             source_sha256="new_hash_456",
@@ -249,14 +263,14 @@ class TestM2_03_GoldenSetEvaluation:
 class TestM2_04_QualityScorePopulated:
     """M2-04: 质量评分 - 验证 quality_score 字段"""
 
-    def test_mda_text_has_quality_score_column(self, temp_db):
+    def test_mda_text_has_quality_score_column(self, temp_duckdb):
         """验证 mda_text 表包含 quality_score 列"""
-        result = temp_db.execute("PRAGMA table_info(mda_text)").fetchall()
+        result = temp_duckdb.execute("PRAGMA table_info(mda_text)").fetchall()
         columns = {row[1] for row in result}
 
         assert "quality_score" in columns
 
-    def test_quality_score_range(self, temp_db):
+    def test_quality_score_range(self, temp_duckdb):
         """验证评分范围为 0-100"""
         from annual_report_mda.scorer import ScoreDetail, calculate_quality_score
 
@@ -269,7 +283,7 @@ class TestM2_04_QualityScorePopulated:
 
         assert 0 <= result.score <= 100
 
-    def test_quality_score_stored_in_db(self, temp_db):
+    def test_quality_score_stored_in_db(self, temp_duckdb):
         """验证评分可以正确存储到数据库"""
         from annual_report_mda.data_manager import MDAUpsertRecord, upsert_mda_text
 
@@ -287,9 +301,9 @@ class TestM2_04_QualityScorePopulated:
             quality_score=85,
             needs_review=False,
         )
-        upsert_mda_text(temp_db, record)
+        upsert_mda_text(temp_duckdb, record)
 
-        result = temp_db.execute(
+        result = temp_duckdb.execute(
             "SELECT quality_score FROM mda_text WHERE stock_code = '600519' AND year = 2023"
         ).fetchone()
 
@@ -333,7 +347,7 @@ class TestM2_05_LowScoreNeedsReview:
         assert result.score >= 60
         assert result.needs_review is False
 
-    def test_needs_review_stored_in_db(self, temp_db):
+    def test_needs_review_stored_in_db(self, temp_duckdb):
         """验证 needs_review 可以正确存储到数据库"""
         from annual_report_mda.data_manager import MDAUpsertRecord, upsert_mda_text
 
@@ -352,9 +366,9 @@ class TestM2_05_LowScoreNeedsReview:
             quality_score=30,
             needs_review=True,
         )
-        upsert_mda_text(temp_db, record)
+        upsert_mda_text(temp_duckdb, record)
 
-        result = temp_db.execute(
+        result = temp_duckdb.execute(
             "SELECT needs_review FROM mda_text WHERE stock_code = '600519' AND year = 2023"
         ).fetchone()
 
@@ -440,7 +454,7 @@ class TestM2_06_NegativeFeatureDetection:
         assert "table_residue" in result.penalties
         assert result.penalties["table_residue"] == 15
 
-    def test_penalties_recorded_in_quality_detail(self, temp_db):
+    def test_penalties_recorded_in_quality_detail(self, temp_duckdb):
         """验证扣分明细记录在 quality_detail 中"""
         from annual_report_mda.scorer import ScoreDetail, calculate_quality_score
 
