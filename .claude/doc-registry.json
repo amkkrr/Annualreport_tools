@@ -1,0 +1,394 @@
+{
+  "$schema": "自定义文档注册表，用于 sync-docs skill 的自动发现和更新",
+  "version": "2.0.0",
+
+  "sync_state": {
+    "active_sync": true,
+    "started_at": "2026-01-12T10:00:00Z",
+    "current_phase": "Phase5",
+    "completed_phases": ["Phase1", "Phase2", "Phase3", "Phase4"],
+    "next_action": "COMMIT_CHANGES",
+    "next_action_context": null,
+    "pending_updates": [],
+    "completed_updates": [
+      {"file": "TODO.md", "type": "task_completed", "completed_at": "2026-01-12T10:05:00Z"},
+      {"file": "README.md", "type": "module_synced", "completed_at": "2026-01-12T10:10:00Z"},
+      {"file": "CLAUDE.md", "type": "content_verified", "completed_at": "2026-01-12T10:15:00Z"},
+      {"file": "data/schema.json", "type": "schema_synced", "completed_at": "2026-01-12T10:20:00Z"},
+      {"file": "docs/dependency_graph.md", "type": "dependency_synced", "completed_at": "2026-01-12T10:25:00Z"}
+    ]
+  },
+
+  "discovery_rules": {
+    "scripts": {
+      "pattern": "*.py",
+      "exclude": ["__pycache__", "test_*", "*_test.py"],
+      "description": "根目录下的 Python 脚本视为核心模块"
+    },
+    "packages": {
+      "pattern": "*/__init__.py",
+      "exclude": ["__pycache__"],
+      "description": "含 __init__.py 的目录视为 Python 包"
+    },
+    "tech_docs": {
+      "pattern": "docs/*.md",
+      "exclude": ["README.*.md"],
+      "description": "docs 目录下的 markdown 文件视为技术文档"
+    },
+    "data_schemas": {
+      "pattern": "data/*.json",
+      "description": "data 目录下的 JSON 文件视为数据结构定义"
+    },
+    "plans": {
+      "pattern": "plans/*.md",
+      "description": "plans 目录下的规划与审计文档（内部使用，不索引到 README）"
+    }
+  },
+
+  "update_triggers": {
+    "new_script": {
+      "condition": "新增根目录 *.py 文件",
+      "updates": ["README.md#模块概览", "README.md#核心功能", "CLAUDE.md#核心模块"]
+    },
+    "new_package": {
+      "condition": "新增 Python 包目录",
+      "updates": ["README.md#模块概览", "CLAUDE.md#核心模块", "CLAUDE.md#项目结构"]
+    },
+    "db_change": {
+      "condition": "修改 */db.py 或 */models.py",
+      "updates": ["data/schema.json"]
+    },
+    "new_dependency": {
+      "condition": "修改 requirements.txt",
+      "updates": ["docs/dependency_graph.md"]
+    },
+    "new_tech_doc": {
+      "condition": "新增 docs/*.md",
+      "updates": ["README.md#技术文档"]
+    },
+    "task_completed": {
+      "condition": "git commit 匹配 TODO.md 任务描述",
+      "updates": ["TODO.md"],
+      "match_strategies": ["id_match", "keyword_match", "path_match", "milestone_match"]
+    }
+  },
+
+  "document_sections": {
+    "README.md": {
+      "核心功能": {
+        "format": "numbered_list",
+        "source": "scripts + packages",
+        "template": "**{name}** – {description}"
+      },
+      "模块概览": {
+        "format": "table",
+        "columns": ["脚本/资源", "说明"],
+        "source": "scripts + packages + resources"
+      },
+      "脚本索引": {
+        "format": "numbered_list",
+        "source": "scripts"
+      },
+      "技术文档": {
+        "format": "bullet_list",
+        "source": "tech_docs"
+      },
+      "更新日志": {
+        "format": "table",
+        "auto_add": "today's changes at top"
+      }
+    },
+    "CLAUDE.md": {
+      "核心模块": {
+        "format": "table",
+        "columns": ["文件", "功能"],
+        "source": "scripts + packages"
+      },
+      "项目结构": {
+        "format": "tree",
+        "source": "filesystem"
+      },
+      "常用命令": {
+        "format": "code_block",
+        "source": "scripts with --help"
+      }
+    },
+    "data/schema.json": {
+      "tables": {
+        "source": "*/db.py CREATE TABLE statements"
+      },
+      "views": {
+        "source": "*/db.py CREATE VIEW statements"
+      }
+    },
+    "docs/dependency_graph.md": {
+      "mermaid_graph": {
+        "source": "requirements.txt + import analysis"
+      },
+      "dependency_table": {
+        "source": "requirements.txt"
+      }
+    },
+    "TODO.md": {
+      "task_items": {
+        "format": "checkbox_list",
+        "pattern": "- \\[ \\] `P[0-3]`",
+        "source": "manual + git commits"
+      },
+      "milestones": {
+        "format": "heading",
+        "pattern": "### 📍 里程碑 M\\d+",
+        "source": "manual"
+      },
+      "match_rules": {
+        "id_pattern": "(M\\d+(-\\d+)?|\\d+\\.\\d+(\\.\\d+)?)",
+        "keyword_extraction": "backtick_content + priority_tag",
+        "path_mapping": {
+          "mda_extractor.py": ["2.5", "MD&A"],
+          "config.yaml": ["1.1", "配置"],
+          "*/db.py": ["1.2", "DuckDB"],
+          "requirements.txt": ["依赖"]
+        }
+      }
+    }
+  },
+
+  "module_metadata": {
+    "1.report_link_crawler.py": {
+      "name": "report_link_crawler",
+      "description": "按板块/行业分段查询巨潮资讯，在速率限制下保持稳定，支持 DuckDB/Excel 双模式输出",
+      "category": "crawler"
+    },
+    "2.pdf_batch_converter.py": {
+      "name": "pdf_batch_converter",
+      "description": "具有MIME验证的鲁棒PDF下载器 + 转换为TXT，支持从 DuckDB/Excel 读取任务",
+      "category": "converter"
+    },
+    "3.text_analysis.py": {
+      "name": "text_analysis",
+      "description": "多进程关键词分析器 + Excel导出",
+      "category": "analyzer"
+    },
+    "text_analysis_universal.py": {
+      "name": "text_analysis_universal",
+      "description": "接受任意TXT目录的轻量级分析器",
+      "category": "analyzer"
+    },
+    "mda_extractor.py": {
+      "name": "mda_extractor",
+      "description": "从年报文本中提取「管理层讨论与分析」(MD&A) 章节",
+      "category": "extractor",
+      "package": "annual_report_mda"
+    },
+    "scripts/migrate_excel_to_duckdb.py": {
+      "name": "migrate_excel_to_duckdb",
+      "description": "Excel → DuckDB 一次性数据迁移脚本，支持幂等执行",
+      "category": "migration",
+      "added": "2026-01-08"
+    },
+    "scripts/llm_annotate.py": {
+      "name": "llm_annotate",
+      "description": "LLM 辅助标注工具，从年报文本生成黄金数据集",
+      "category": "evaluation",
+      "added": "2026-01-10"
+    },
+    "scripts/evaluate_extraction.py": {
+      "name": "evaluate_extraction",
+      "description": "提取质量评估脚本，支持规则评估和 LLM 评估双模式",
+      "category": "evaluation",
+      "added": "2026-01-10"
+    },
+    "scripts/auto_improve.py": {
+      "name": "auto_improve",
+      "description": "自动分析失败模式并生成改进建议",
+      "category": "evaluation",
+      "added": "2026-01-10"
+    },
+    "scripts/fix_golden_offsets.py": {
+      "name": "fix_golden_offsets",
+      "description": "修复黄金数据集中 LLM 标注的字符偏移量",
+      "category": "evaluation",
+      "added": "2026-01-10"
+    },
+    "scripts/select_golden_samples.py": {
+      "name": "select_golden_samples",
+      "description": "从数据库随机选取黄金样本用于评估",
+      "category": "evaluation",
+      "added": "2026-01-10"
+    },
+    "scripts/download_samples.py": {
+      "name": "download_samples",
+      "description": "下载黄金样本对应的年报文件",
+      "category": "evaluation",
+      "added": "2026-01-10"
+    },
+    "scripts/backfill_quality_score.py": {
+      "name": "backfill_quality_score",
+      "description": "M2 验收 - 质量评分回填脚本，重新计算现有记录的 quality_score",
+      "category": "migration",
+      "added": "2026-01-11"
+    },
+    "scripts/migrate_mda_schema.py": {
+      "name": "migrate_mda_schema",
+      "description": "M2 验收 - Schema 迁移脚本，为 mda_text 表添加缺失字段",
+      "category": "migration",
+      "added": "2026-01-11"
+    },
+    "scripts/migrate_duckdb_to_sqlite.py": {
+      "name": "migrate_duckdb_to_sqlite",
+      "description": "双数据库架构迁移脚本，将元数据从 DuckDB 迁移至 SQLite",
+      "category": "migration",
+      "added": "2026-01-12"
+    }
+  },
+
+  "package_metadata": {
+    "annual_report_mda": {
+      "description": "MD&A 提取核心包（strategies, scorer, db, text_loader, data_manager, config_manager）",
+      "entry_point": "mda_extractor.py",
+      "submodules": {
+        "strategies.py": {
+          "description": "多策略迭代提取 MD&A 章节（TOC 解析 + 正文扫描）",
+          "added": "2026-01-02"
+        },
+        "scorer.py": {
+          "description": "质量评分器，检测长度、关键词、格式异常",
+          "added": "2026-01-02"
+        },
+        "db.py": {
+          "description": "DuckDB 数据库操作封装（OLAP 引擎，管理 mda_text 及分析结果）",
+          "added": "2026-01-02",
+          "updated": "2026-01-12"
+        },
+        "sqlite_db.py": {
+          "description": "SQLite 数据库操作封装（OLTP 引擎，管理 companies, reports, logs 等元数据）",
+          "added": "2026-01-12"
+        },
+        "text_loader.py": {
+          "description": "文本文件加载与页分割器",
+          "added": "2026-01-02"
+        },
+        "data_manager.py": {
+          "description": "数据管理器，协调提取与数据库操作",
+          "added": "2026-01-02"
+        },
+        "config_manager.py": {
+          "description": "统一配置管理模块，基于 Pydantic v2 + YAML",
+          "added": "2026-01-07"
+        },
+        "section_splitter.py": {
+          "description": "MD&A 文本字段切分模块，将文本切分为经营回顾和未来展望",
+          "added": "2026-01-10"
+        },
+        "utils.py": {
+          "description": "通用工具函数（路径解析、哈希计算等）",
+          "added": "2026-01-02"
+        }
+      },
+      "subpackages": {
+        "llm": {
+          "description": "LLM 统一客户端子包，支持 DeepSeek/Qwen/Claude/OpenAI 多提供商自动降级",
+          "added": "2026-01-11",
+          "submodules": {
+            "client.py": "多提供商客户端，自动降级与重试",
+            "prompts.py": "Prompt 模板管理",
+            "providers/base.py": "提供商基类",
+            "providers/deepseek.py": "DeepSeek 适配器 (OpenAI 兼容)",
+            "providers/qwen.py": "通义千问适配器 (dashscope)",
+            "providers/claude.py": "Claude 适配器 (anthropic)",
+            "providers/openai.py": "OpenAI 适配器"
+          }
+        },
+        "adaptive": {
+          "description": "自适应学习子包，LLM 驱动的提取优化",
+          "added": "2026-01-11",
+          "submodules": {
+            "self_refine.py": "Self-Refine 迭代改进提取质量",
+            "few_shot.py": "动态 Few-shot 样本库，向量化存储与检索",
+            "strategy_weights.py": "策略权重自适应，动态调整选择权重",
+            "failure_patterns.py": "失败模式学习，生成排除规则"
+          }
+        }
+      }
+    },
+    "tests": {
+      "description": "单元测试包",
+      "added": "2026-01-08",
+      "submodules": {
+        "test_duckdb_core.py": {
+          "description": "DuckDB 核心功能测试（M1 验证）",
+          "added": "2026-01-08"
+        },
+        "test_scorer.py": {
+          "description": "评分器单元测试（负向特征检测、综合质量评分）",
+          "added": "2026-01-10"
+        },
+        "test_m2_verification.py": {
+          "description": "M2 里程碑验收测试（全流程驱动、断点续传、质量评分）",
+          "added": "2026-01-11"
+        },
+        "test_strategies.py": {
+          "description": "MD&A 提取策略单元测试（TOC 解析、正文扫描）",
+          "added": "2026-01-11"
+        },
+        "test_mda_extractor.py": {
+          "description": "MD&A 提取器单元测试（迭代策略、边界处理）",
+          "added": "2026-01-11"
+        },
+        "test_mda_integration.py": {
+          "description": "MD&A 端到端集成测试（增量逻辑、数据库写入）",
+          "added": "2026-01-11"
+        },
+        "test_yoy_validator.py": {
+          "description": "L3 时序校验测试（FLAG_YOY_CHANGE_HIGH 检测）",
+          "added": "2026-01-11"
+        },
+        "test_llm_client.py": {
+          "description": "LLM 客户端单元测试（多提供商、降级、JSON 解析）",
+          "added": "2026-01-11"
+        },
+        "test_adaptive.py": {
+          "description": "自适应学习模块测试（Few-shot、策略权重、失败模式）",
+          "added": "2026-01-11"
+        },
+        "test_logging.py": {
+          "description": "日志系统测试（统一配置、文件轮转、格式验证）",
+          "added": "2026-01-11"
+        }
+      }
+    },
+    "webui": {
+      "description": "Streamlit WebUI，提供监控仪表盘、配置管理、任务管理界面",
+      "added": "2026-01-11",
+      "entry_point": "app.py",
+      "submodules": {
+        "app.py": {
+          "description": "WebUI 主入口，定义页面配置和首页内容",
+          "added": "2026-01-11"
+        }
+      },
+      "subpackages": {
+        "components": {
+          "description": "可复用 UI 组件",
+          "added": "2026-01-11",
+          "submodules": {
+            "config_editor.py": "配置文件编辑器组件",
+            "db_utils.py": "DuckDB 数据库查询工具",
+            "pid_manager.py": "后台进程 PID 管理器，支持跨会话任务追踪",
+            "task_runner.py": "后台任务运行器，集成 PID 管理"
+          }
+        },
+        "pages": {
+          "description": "Streamlit 多页面应用",
+          "added": "2026-01-11",
+          "submodules": {
+            "1_监控仪表盘.py": "数据处理进度、队列状态、关键指标监控",
+            "2_配置管理.py": "config.yaml 在线编辑与验证",
+            "3_任务管理.py": "后台任务启动、停止与日志查看",
+            "4_年报浏览器.py": "年报筛选、下载状态管理与手动触发流程"
+          }
+        }
+      }
+    }
+  }
+}

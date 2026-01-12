@@ -93,6 +93,7 @@ duckdb data/annual_reports.duckdb "SELECT COUNT(*) FROM reports"
 - [x] `P1` **爬虫适配**：`1.report_link_crawler.py` 改为**仅写入 SQLite**，移除所有 DuckDB 连接代码（完成于 2026-01-12）
 - [x] `P1` **WebUI 适配**：状态查询组件改为**仅读取 SQLite**，彻底解除对 DuckDB 的文件锁占用（完成于 2026-01-12）
 - [x] `P1` **并发验证**：验证爬虫运行期间 WebUI 可正常刷新状态（完成于 2026-01-12）
+- [x] `P1` **项目文档同步**：同步 README.md、CLAUDE.md、TODO.md、data/schema.json 以反映双数据库架构变更（完成于 2026-01-12）
 
 ### 📍 里程碑 M1.5: 双数据库架构升级 ✅ (验收通过 2026-01-12)
 

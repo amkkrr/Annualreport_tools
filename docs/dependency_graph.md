@@ -37,11 +37,13 @@ graph LR
 
     subgraph Storage [数据存储]
         duckdb[duckdb]
+        sqlite3[sqlite3 (Built-in)]
     end
 
     subgraph Utility [工具库]
         rich[rich]
         dotenv[python-dotenv]
+        psutil[psutil]
     end
 
     subgraph Config [配置管理]
@@ -49,30 +51,45 @@ graph LR
         pyyaml[PyYAML]
     end
 
+    subgraph WebUI [Web 界面]
+        streamlit[streamlit]
+    end
+
     %% 爬虫依赖
     Crawler --> requests
     Crawler --> openpyxl
+    Crawler --> sqlite3
     Crawler -.-> CNINFO
 
     %% 转换依赖
     Converter --> pandas
     Converter --> requests
     Converter --> PDFEngine
+    Converter --> sqlite3
 
     %% 分析依赖
     Analyzer --> jieba
     Analyzer --> xlwt
+    Analyzer --> duckdb
 
     %% MD&A 提取器依赖
     MDAExtractor --> duckdb
+    MDAExtractor --> sqlite3
     MDAExtractor --> rich
     MDAExtractor --> dotenv
+
+    %% WebUI 依赖
+    WebUI_Module[webui/app.py] --> streamlit
+    WebUI_Module --> psutil
+    WebUI_Module --> sqlite3
+    WebUI_Module --> duckdb
 
     %% 配置管理依赖 (所有脚本共用)
     Crawler --> Config
     Converter --> Config
     Analyzer --> Config
     MDAExtractor --> Config
+    WebUI_Module --> Config
 ```
 
 ## 核心依赖说明
@@ -87,7 +104,10 @@ graph LR
 | **jieba**        | `==0.42.1`   | 中文分词库，用于分析模块提取关键词。                      |
 | **openpyxl**     | `==3.1.5`    | 用于爬虫模块将抓取结果写入 `.xlsx` 文件。                 |
 | **xlwt**         | `==1.3.0`    | 用于分析模块将词频统计结果写入老版本 `.xls` 文件。        |
-| **duckdb**       | `>=0.9.0`    | 用于 MD&A 提取器存储提取结果。                            |
+| **duckdb**       | `>=0.9.0`    | 用于 MD&A 提取器存储提取结果 (OLAP)。                     |
+| **sqlite3**      | `Built-in`   | 用于存储元数据、任务状态与日志 (OLTP)。                   |
+| **streamlit**    | `>=1.33.0`   | 用于提供 Web 管理界面。                                   |
+| **psutil**       | `>=5.9.0`    | 用于 WebUI 后台进程管理与 PID 追踪。                      |
 | **rich**         | `>=13.0.0`   | 用于 MD&A 提取器的进度条与日志美化。                      |
 | **python-dotenv**| `>=1.0.0`    | 用于 MD&A 提取器从 `.env` 加载配置。                      |
 | **PyYAML**       | `>=6.0`      | 用于统一配置管理，解析 YAML 配置文件。                    |
