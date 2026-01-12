@@ -1,33 +1,87 @@
-"""DuckDB database utilities for WebUI."""
+"""Database utilities for WebUI.
+
+This module provides database access for the Streamlit WebUI:
+- SQLite: metadata queries (companies, reports, etc.) with WAL for concurrent access
+- DuckDB: mda_text queries for OLAP analysis
+
+The dual-database architecture allows the WebUI to read data concurrently
+while crawlers/extractors are writing to the database.
+"""
 
 from __future__ import annotations
 
+import logging
+import sqlite3
+import sys
 from pathlib import Path
 
-import duckdb
 import pandas as pd
 import streamlit as st
 
-DEFAULT_DB_PATH = Path("data/annual_reports.duckdb")
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from annual_report_mda import sqlite_db
+
+DEFAULT_SQLITE_PATH = Path("data/metadata.db")
+DEFAULT_DUCKDB_PATH = Path("data/annual_reports.duckdb")
+
+logger = logging.getLogger(__name__)
 
 
-@st.cache_resource
-def get_connection(db_path: Path = DEFAULT_DB_PATH) -> duckdb.DuckDBPyConnection | None:
-    """Gets a cached, read-only DuckDB connection."""
+def get_sqlite_connection(
+    db_path: Path = DEFAULT_SQLITE_PATH,
+) -> sqlite3.Connection | None:
+    """Gets a new SQLite connection for each query (short connection strategy).
+
+    Using short connections avoids blocking writers during long-running queries
+    and prevents "database is locked" errors during concurrent access.
+    """
+    if not db_path.exists():
+        logger.warning(f"SQLite database not found: {db_path}")
+        return None
+
     try:
-        return duckdb.connect(database=str(db_path), read_only=True)
-    except duckdb.IOException as e:
-        st.error(f"数据库连接失败: {e}\n请确认数据库文件存在于: {db_path.absolute()}")
+        conn = sqlite_db.get_connection(db_path, read_only=True)
+        return conn
+    except Exception as e:
+        logger.error(f"Failed to connect to SQLite: {e}")
+        st.error(f"数据库连接失败: {e}")
         return None
 
 
-@st.cache_data(ttl=60)
-def get_reports_progress(_conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Queries the annual processing progress."""
-    if _conn is None:
-        return pd.DataFrame()
+def get_duckdb_connection(db_path: Path = DEFAULT_DUCKDB_PATH):
+    """Gets a DuckDB connection for mda_text queries.
+
+    Note: DuckDB is used only for mda_text (OLAP) queries.
+    For metadata queries, use SQLite via get_sqlite_connection().
+    """
+    if not db_path.exists():
+        logger.warning(f"DuckDB database not found: {db_path}")
+        return None
+
     try:
-        # Use inline query instead of view for robustness
+        import duckdb
+
+        return duckdb.connect(database=str(db_path), read_only=True)
+    except Exception as e:
+        logger.error(f"Failed to connect to DuckDB: {e}")
+        return None
+
+
+# =============================================================================
+# Reports Progress Queries (SQLite)
+# =============================================================================
+
+
+@st.cache_data(ttl=60)
+def get_reports_progress() -> pd.DataFrame:
+    """Queries the annual processing progress from SQLite."""
+    conn = get_sqlite_connection()
+    if conn is None:
+        return pd.DataFrame()
+
+    try:
         sql = """
             SELECT
                 year,
@@ -39,61 +93,130 @@ def get_reports_progress(_conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
             GROUP BY year
             ORDER BY year DESC
         """
-        return _conn.execute(sql).df()
-    except duckdb.Error as e:
+        cursor = conn.execute(sql)
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        return pd.DataFrame(rows, columns=columns)
+    except sqlite3.Error as e:
         st.error(f"查询年度进度失败: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
 
 
 @st.cache_data(ttl=60)
-def get_pending_downloads(_conn: duckdb.DuckDBPyConnection, limit: int = 100) -> pd.DataFrame:
-    """Queries the queue of pending downloads."""
-    if _conn is None:
+def get_pending_downloads(limit: int = 100) -> pd.DataFrame:
+    """Queries the queue of pending downloads from SQLite."""
+    conn = get_sqlite_connection()
+    if conn is None:
         return pd.DataFrame()
+
     try:
-        # Use inline query instead of view for robustness
-        sql = f"""
+        sql = """
             SELECT r.stock_code, c.short_name, r.year, r.url
             FROM reports r
             LEFT JOIN companies c ON r.stock_code = c.stock_code
             WHERE r.download_status = 'pending'
             ORDER BY r.year DESC, r.stock_code
-            LIMIT {limit}
+            LIMIT ?
         """
-        return _conn.execute(sql).df()
-    except duckdb.Error as e:
+        cursor = conn.execute(sql, (limit,))
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        return pd.DataFrame(rows, columns=columns)
+    except sqlite3.Error as e:
         st.error(f"查询待下载队列失败: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
 
 
 @st.cache_data(ttl=60)
-def get_pending_converts(_conn: duckdb.DuckDBPyConnection, limit: int = 100) -> pd.DataFrame:
-    """Queries the queue of pending conversions."""
-    if _conn is None:
+def get_pending_converts(limit: int = 100) -> pd.DataFrame:
+    """Queries the queue of pending conversions from SQLite."""
+    conn = get_sqlite_connection()
+    if conn is None:
         return pd.DataFrame()
+
     try:
-        # Use inline query instead of view for robustness
-        sql = f"""
+        sql = """
             SELECT r.stock_code, c.short_name, r.year, r.pdf_path
             FROM reports r
             LEFT JOIN companies c ON r.stock_code = c.stock_code
             WHERE r.download_status = 'success' AND r.convert_status = 'pending'
             ORDER BY r.year DESC, r.stock_code
-            LIMIT {limit}
+            LIMIT ?
         """
-        return _conn.execute(sql).df()
-    except duckdb.Error as e:
+        cursor = conn.execute(sql, (limit,))
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        return pd.DataFrame(rows, columns=columns)
+    except sqlite3.Error as e:
         st.error(f"查询待转换队列失败: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=10)
+def get_counts() -> dict[str, int]:
+    """Gets the counts for various queues from SQLite and DuckDB."""
+    default_counts = {
+        "pending_downloads": 0,
+        "pending_converts": 0,
+        "mda_needs_review": 0,
+        "total_extracted": 0,
+    }
+
+    # Query SQLite for metadata counts
+    sqlite_conn = get_sqlite_connection()
+    if sqlite_conn is not None:
+        try:
+            default_counts["pending_downloads"] = sqlite_conn.execute(
+                "SELECT COUNT(*) FROM reports WHERE download_status = 'pending'"
+            ).fetchone()[0]
+
+            default_counts["pending_converts"] = sqlite_conn.execute(
+                "SELECT COUNT(*) FROM reports WHERE download_status = 'success' AND convert_status = 'pending'"
+            ).fetchone()[0]
+
+            default_counts["total_extracted"] = sqlite_conn.execute(
+                "SELECT COUNT(*) FROM reports WHERE extract_status = 'success'"
+            ).fetchone()[0]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get SQLite counts: {e}")
+        finally:
+            sqlite_conn.close()
+
+    # Query DuckDB for mda_text counts
+    duckdb_conn = get_duckdb_connection()
+    if duckdb_conn is not None:
+        try:
+            result = duckdb_conn.execute(
+                "SELECT COUNT(*) FROM mda_text WHERE needs_review = true"
+            ).fetchone()
+            default_counts["mda_needs_review"] = result[0] if result else 0
+        except Exception as e:
+            logger.debug(f"mda_text query failed (may not exist): {e}")
+        finally:
+            duckdb_conn.close()
+
+    return default_counts
+
+
+# =============================================================================
+# MDA Queries (DuckDB)
+# =============================================================================
 
 
 @st.cache_data(ttl=60)
-def get_mda_needs_review(_conn: duckdb.DuckDBPyConnection, limit: int = 100) -> pd.DataFrame:
-    """Queries MD&A sections that need review."""
-    if _conn is None:
+def get_mda_needs_review(limit: int = 100) -> pd.DataFrame:
+    """Queries MD&A sections that need review from DuckDB."""
+    conn = get_duckdb_connection()
+    if conn is None:
         return pd.DataFrame()
+
     try:
-        # Use inline query instead of view for robustness
         sql = f"""
             SELECT
                 stock_code,
@@ -108,84 +231,44 @@ def get_mda_needs_review(_conn: duckdb.DuckDBPyConnection, limit: int = 100) -> 
             ORDER BY quality_score ASC, extracted_at DESC
             LIMIT {limit}
         """
-        return _conn.execute(sql).df()
-    except duckdb.Error as e:
+        return conn.execute(sql).df()
+    except Exception as e:
         st.error(f"查询待审核MDA失败: {e}")
         return pd.DataFrame()
-
-
-@st.cache_data(ttl=10)
-def get_counts(_conn: duckdb.DuckDBPyConnection) -> dict[str, int]:
-    """Gets the counts for various queues."""
-    default_counts = {
-        "pending_downloads": 0,
-        "pending_converts": 0,
-        "mda_needs_review": 0,
-        "total_extracted": 0,
-    }
-    if _conn is None:
-        return default_counts
-    try:
-        # Use inline queries instead of views for robustness
-        pending_downloads = _conn.execute(
-            "SELECT COUNT(*) FROM reports WHERE download_status = 'pending'"
-        ).fetchone()[0]
-
-        pending_converts = _conn.execute(
-            "SELECT COUNT(*) FROM reports WHERE download_status = 'success' AND convert_status = 'pending'"
-        ).fetchone()[0]
-
-        # Check if mda_text table exists before querying
-        try:
-            mda_needs_review = _conn.execute(
-                "SELECT COUNT(*) FROM mda_text WHERE needs_review = true"
-            ).fetchone()[0]
-        except duckdb.Error:
-            mda_needs_review = 0
-
-        total_extracted = _conn.execute(
-            "SELECT COUNT(*) FROM reports WHERE extract_status = 'success'"
-        ).fetchone()[0]
-
-        return {
-            "pending_downloads": pending_downloads,
-            "pending_converts": pending_converts,
-            "mda_needs_review": mda_needs_review,
-            "total_extracted": total_extracted,
-        }
-    except duckdb.Error as e:
-        st.error(f"获取队列计数失败: {e}")
-        return default_counts
+    finally:
+        conn.close()
 
 
 # =============================================================================
-# 年报浏览器查询函数
+# Filter and Search Queries (SQLite)
 # =============================================================================
 
 
 @st.cache_data(ttl=300)
-def get_filter_options(_conn: duckdb.DuckDBPyConnection) -> dict:
-    """Gets unique values for filter dropdowns."""
-    if _conn is None:
-        return {"trades": [], "plates": [], "min_year": 2010, "max_year": 2024}
+def get_filter_options() -> dict:
+    """Gets unique values for filter dropdowns from SQLite."""
+    default_options = {"trades": [], "plates": [], "min_year": 2010, "max_year": 2024}
+
+    conn = get_sqlite_connection()
+    if conn is None:
+        return default_options
+
     try:
-        trades = (
-            _conn.execute(
-                "SELECT DISTINCT trade_name FROM companies WHERE trade_name IS NOT NULL ORDER BY trade_name"
-            )
-            .df()["trade_name"]
-            .tolist()
+        # Get unique trade names
+        trades_cursor = conn.execute(
+            "SELECT DISTINCT trade_name FROM companies WHERE trade_name IS NOT NULL ORDER BY trade_name"
         )
+        trades = [row[0] for row in trades_cursor.fetchall()]
 
-        plates = (
-            _conn.execute(
-                "SELECT DISTINCT plate FROM companies WHERE plate IS NOT NULL ORDER BY plate"
-            )
-            .df()["plate"]
-            .tolist()
+        # Get unique plates
+        plates_cursor = conn.execute(
+            "SELECT DISTINCT plate FROM companies WHERE plate IS NOT NULL ORDER BY plate"
         )
+        plates = [row[0] for row in plates_cursor.fetchall()]
 
-        years = _conn.execute("SELECT MIN(year), MAX(year) FROM reports").fetchone()
+        # Get year range
+        years_cursor = conn.execute("SELECT MIN(year), MAX(year) FROM reports")
+        years = years_cursor.fetchone()
 
         return {
             "trades": trades,
@@ -193,13 +276,15 @@ def get_filter_options(_conn: duckdb.DuckDBPyConnection) -> dict:
             "min_year": years[0] or 2010,
             "max_year": years[1] or 2024,
         }
-    except duckdb.Error:
-        return {"trades": [], "plates": [], "min_year": 2010, "max_year": 2024}
+    except sqlite3.Error as e:
+        logger.error(f"Failed to get filter options: {e}")
+        return default_options
+    finally:
+        conn.close()
 
 
 @st.cache_data(ttl=10)
 def search_reports(
-    _conn: duckdb.DuckDBPyConnection,
     query: str | None = None,
     trades: list[str] | None = None,
     years: tuple[int, int] | None = None,
@@ -208,15 +293,16 @@ def search_reports(
     extract_status: str | None = None,
     limit: int = 500,
 ) -> pd.DataFrame:
-    """Searches and filters reports based on multiple criteria."""
-    if _conn is None:
+    """Searches and filters reports based on multiple criteria from SQLite."""
+    conn = get_sqlite_connection()
+    if conn is None:
         return pd.DataFrame()
 
     where_clauses = []
-    params = []
+    params: list = []
 
     if query:
-        where_clauses.append("(c.stock_code ILIKE ? OR c.short_name ILIKE ?)")
+        where_clauses.append("(c.stock_code LIKE ? OR c.short_name LIKE ?)")
         params.extend([f"%{query}%", f"%{query}%"])
 
     if trades:
@@ -253,20 +339,49 @@ def search_reports(
         JOIN companies c ON r.stock_code = c.stock_code
         {where_str}
         ORDER BY r.year DESC, c.stock_code
-        LIMIT {limit}
+        LIMIT ?
     """
+    params.append(limit)
 
     try:
-        return _conn.execute(sql, params).df()
-    except duckdb.Error as e:
+        cursor = conn.execute(sql, params)
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        return pd.DataFrame(rows, columns=columns)
+    except sqlite3.Error as e:
         st.error(f"查询报告失败: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
 
 
-def get_write_connection(db_path: Path = DEFAULT_DB_PATH) -> duckdb.DuckDBPyConnection | None:
-    """Gets a writable DuckDB connection (not cached)."""
-    try:
-        return duckdb.connect(database=str(db_path), read_only=False)
-    except duckdb.IOException as e:
-        st.error(f"数据库连接失败: {e}")
-        return None
+# =============================================================================
+# Deprecated Compatibility Functions
+# =============================================================================
+
+# Old function signatures for backward compatibility
+# These will be removed in a future version
+
+
+def get_connection(db_path: Path = DEFAULT_DUCKDB_PATH):
+    """Deprecated: Use get_sqlite_connection() for metadata or get_duckdb_connection() for mda_text."""
+    import warnings
+
+    warnings.warn(
+        "get_connection() is deprecated. Use get_sqlite_connection() or get_duckdb_connection().",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_duckdb_connection(db_path)
+
+
+def get_write_connection(db_path: Path = DEFAULT_DUCKDB_PATH):
+    """Deprecated: Use sqlite_db.get_connection() for writable SQLite access."""
+    import warnings
+
+    warnings.warn(
+        "get_write_connection() is deprecated. Use sqlite_db.get_connection() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_duckdb_connection(db_path)

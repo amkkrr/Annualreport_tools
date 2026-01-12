@@ -10,20 +10,14 @@ import streamlit as st
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from annual_report_mda import sqlite_db
 from webui.components import db_utils
 
 st.set_page_config(page_title="年报浏览器", page_icon="📚", layout="wide")
 st.title("智能选股与年报浏览器")
 
-# Get database connection
-conn = db_utils.get_connection()
-
-if conn is None:
-    st.error("无法连接到数据库，请确认数据库文件存在。")
-    st.stop()
-
 # Get filter options
-filter_options = db_utils.get_filter_options(conn)
+filter_options = db_utils.get_filter_options()
 
 # =============================================================================
 # Sidebar: Filters
@@ -99,7 +93,6 @@ if "selected_reports" not in st.session_state:
 
 # Perform search
 df = db_utils.search_reports(
-    conn,
     query=search_query if search_query else None,
     trades=selected_trades if selected_trades else None,
     years=year_range,
@@ -193,19 +186,17 @@ with col2:
         use_container_width=True,
     ):
         if selected_count > 0:
-            write_conn = db_utils.get_write_connection()
-            if write_conn:
-                try:
-                    for _, row in selected_rows.iterrows():
-                        write_conn.execute(
-                            "UPDATE reports SET download_status = 'pending' WHERE stock_code = ? AND year = ?",
-                            [row["stock_code"], row["year"]],
-                        )
-                    st.success(f"已重置 {selected_count} 条记录的下载状态")
-                    st.cache_data.clear()
-                    st.rerun()
-                finally:
-                    write_conn.close()
+            with sqlite_db.connection_context() as conn:
+                for _, row in selected_rows.iterrows():
+                    sqlite_db.update_report_status(
+                        conn,
+                        stock_code=row["stock_code"],
+                        year=int(row["year"]),
+                        download_status="pending",
+                    )
+            st.success(f"已重置 {selected_count} 条记录的下载状态")
+            st.cache_data.clear()
+            st.rerun()
 
 with col3:
     if st.button(
@@ -215,19 +206,17 @@ with col3:
         use_container_width=True,
     ):
         if selected_count > 0:
-            write_conn = db_utils.get_write_connection()
-            if write_conn:
-                try:
-                    for _, row in selected_rows.iterrows():
-                        write_conn.execute(
-                            "UPDATE reports SET convert_status = 'pending' WHERE stock_code = ? AND year = ?",
-                            [row["stock_code"], row["year"]],
-                        )
-                    st.success(f"已重置 {selected_count} 条记录的转换状态")
-                    st.cache_data.clear()
-                    st.rerun()
-                finally:
-                    write_conn.close()
+            with sqlite_db.connection_context() as conn:
+                for _, row in selected_rows.iterrows():
+                    sqlite_db.update_report_status(
+                        conn,
+                        stock_code=row["stock_code"],
+                        year=int(row["year"]),
+                        convert_status="pending",
+                    )
+            st.success(f"已重置 {selected_count} 条记录的转换状态")
+            st.cache_data.clear()
+            st.rerun()
 
 with col4:
     if st.button(
@@ -237,19 +226,17 @@ with col4:
         use_container_width=True,
     ):
         if selected_count > 0:
-            write_conn = db_utils.get_write_connection()
-            if write_conn:
-                try:
-                    for _, row in selected_rows.iterrows():
-                        write_conn.execute(
-                            "UPDATE reports SET extract_status = 'pending' WHERE stock_code = ? AND year = ?",
-                            [row["stock_code"], row["year"]],
-                        )
-                    st.success(f"已重置 {selected_count} 条记录的提取状态")
-                    st.cache_data.clear()
-                    st.rerun()
-                finally:
-                    write_conn.close()
+            with sqlite_db.connection_context() as conn:
+                for _, row in selected_rows.iterrows():
+                    sqlite_db.update_report_status(
+                        conn,
+                        stock_code=row["stock_code"],
+                        year=int(row["year"]),
+                        extract_status="pending",
+                    )
+            st.success(f"已重置 {selected_count} 条记录的提取状态")
+            st.cache_data.clear()
+            st.rerun()
 
 # Tips
 st.info(
