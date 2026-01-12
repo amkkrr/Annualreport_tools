@@ -82,12 +82,13 @@ def split_mda_sections(mda_text: str) -> MdaSections:
                     and (best_match is None or char_offset < best_match.start())
                 ):
                     # 创建一个带有正确位置的 match-like 对象
+                    # 使用 staticmethod 避免实例作为第一个参数传入 lambda
                     best_match = type(
                         "MatchResult",
                         (),
                         {
-                            "start": lambda s=char_offset: s,
-                            "group": lambda s=match.group(): s,
+                            "start": staticmethod(lambda s=char_offset: s),
+                            "group": staticmethod(lambda s=match.group(): s),
                         },
                     )()
                     best_pattern_idx = pattern_idx

@@ -1,90 +1,64 @@
+"""DuckDB database operations for OLAP analysis and mda_text storage.
+
+This module provides DuckDB-based storage for large text content (mda_text)
+and supports federated queries via ATTACH to the SQLite metadata database.
+
+For metadata operations (companies, reports, etc.), use sqlite_db.py instead.
+"""
+
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
+from typing import Any
 
 from .utils import ensure_parent_dir, utc_now
 
+DEFAULT_DUCKDB_PATH = Path("data/annual_reports.duckdb")
+DEFAULT_SQLITE_PATH = Path("data/metadata.db")
 
-def init_db(db_path: str | Path) -> duckdb.DuckDBPyConnection:
+
+def init_db(
+    db_path: str | Path = DEFAULT_DUCKDB_PATH,
+    sqlite_path: str | Path | None = DEFAULT_SQLITE_PATH,
+    read_only: bool = False,
+    attach_sqlite: bool = False,
+) -> duckdb.DuckDBPyConnection:
+    """Initializes a DuckDB connection with optional SQLite federation.
+
+    Args:
+        db_path: Path to the DuckDB database file.
+        sqlite_path: Path to the SQLite metadata database for federated queries.
+        read_only: If True, open the database in read-only mode.
+        attach_sqlite: If True and sqlite_path exists, ATTACH SQLite for federation.
+                       Defaults to False for backward compatibility.
+
+    Returns:
+        A configured DuckDB connection object.
     """
-    初始化 DuckDB（建表/建视图），并返回连接对象。
-    """
-    import duckdb  # 延迟导入，避免依赖缺失时导入期崩溃
+    import duckdb  # Lazy import to avoid crash when duckdb is not installed
 
-    db_path_str = str(db_path)
-    ensure_parent_dir(db_path_str)
-    conn = duckdb.connect(database=db_path_str)
+    db_path = Path(db_path)
+    if not read_only:
+        ensure_parent_dir(str(db_path))
 
-    _create_tables(conn)
-    _create_views(conn)
+    conn = duckdb.connect(database=str(db_path), read_only=read_only)
+
+    # Create mda_text table if not exists
+    if not read_only:
+        _create_mda_table(conn)
+        _create_views(conn)
+
+    # ATTACH SQLite for federated queries
+    if attach_sqlite and sqlite_path:
+        sqlite_path = Path(sqlite_path)
+        if sqlite_path.exists():
+            _attach_sqlite(conn, sqlite_path, create_views=not read_only)
 
     return conn
 
 
-def _create_tables(conn: duckdb.DuckDBPyConnection) -> None:
-    # === 公司基本信息表 ===
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS companies (
-            stock_code VARCHAR PRIMARY KEY,
-            short_name VARCHAR NOT NULL,
-            full_name VARCHAR,
-            plate VARCHAR,
-            trade VARCHAR,
-            trade_name VARCHAR,
-            first_seen_at TIMESTAMP,
-            updated_at TIMESTAMP
-        );
-        """
-    )
-
-    # === 年报元数据与生命周期管理表 ===
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS reports (
-            stock_code VARCHAR NOT NULL,
-            year INTEGER NOT NULL,
-            announcement_id VARCHAR,
-            title VARCHAR,
-            url VARCHAR NOT NULL,
-            publish_date DATE,
-
-            download_status VARCHAR DEFAULT 'pending',
-            convert_status VARCHAR DEFAULT 'pending',
-            extract_status VARCHAR DEFAULT 'pending',
-
-            download_error VARCHAR,
-            convert_error VARCHAR,
-            extract_error VARCHAR,
-            download_retries INTEGER DEFAULT 0,
-            convert_retries INTEGER DEFAULT 0,
-
-            pdf_path VARCHAR,
-            txt_path VARCHAR,
-            pdf_size_bytes BIGINT,
-            pdf_sha256 VARCHAR,
-            txt_sha256 VARCHAR,
-
-            crawled_at TIMESTAMP,
-            downloaded_at TIMESTAMP,
-            converted_at TIMESTAMP,
-            updated_at TIMESTAMP,
-
-            source VARCHAR DEFAULT 'cninfo',
-
-            PRIMARY KEY (stock_code, year)
-        );
-        """
-    )
-
-    # === 索引 ===
-    # 注意: DuckDB 对带索引列的 UPDATE 操作有已知限制
-    # 可能导致 "Duplicate key violates primary key constraint" 错误
-    # 因此这里不创建状态列索引，依靠 DuckDB 的优化器进行查询优化
-    # 参考: https://duckdb.org/docs/sql/indexes
-
-    # === MDA 提取结果表 ===
+def _create_mda_table(conn: duckdb.DuckDBPyConnection) -> None:
+    """Creates the mda_text table for storing extracted MD&A content."""
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS mda_text (
@@ -127,78 +101,10 @@ def _create_tables(conn: duckdb.DuckDBPyConnection) -> None:
         """
     )
 
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS extraction_rules (
-            stock_code VARCHAR,
-            year INTEGER,
-            report_signature VARCHAR,
-
-            start_pattern VARCHAR,
-            end_pattern VARCHAR,
-            rule_source VARCHAR,
-            updated_at TIMESTAMP,
-
-            PRIMARY KEY (stock_code, year)
-        );
-        """
-    )
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS extraction_errors (
-            stock_code VARCHAR,
-            year INTEGER,
-            source_path VARCHAR,
-            source_sha256 VARCHAR,
-
-            error_type VARCHAR,
-            error_message TEXT,
-
-            provider VARCHAR,
-            http_status INTEGER,
-            trace_id VARCHAR,
-
-            created_at TIMESTAMP
-        );
-        """
-    )
-
-    # === 策略统计表 (LLM 自适应学习) ===
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS strategy_stats (
-            strategy VARCHAR PRIMARY KEY,
-            attempts INTEGER DEFAULT 0,
-            success INTEGER DEFAULT 0,
-            last_updated TIMESTAMP
-        );
-        """
-    )
-
-    # === LLM 调用日志表 ===
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS llm_call_logs (
-            id INTEGER PRIMARY KEY,
-            stock_code VARCHAR,
-            year INTEGER,
-            provider VARCHAR,
-            model VARCHAR,
-            prompt_type VARCHAR,
-            prompt_tokens INTEGER,
-            completion_tokens INTEGER,
-            latency_ms INTEGER,
-            success BOOLEAN,
-            error_message TEXT,
-            created_at TIMESTAMP
-        );
-        """
-    )
-
 
 def _create_views(conn: duckdb.DuckDBPyConnection) -> None:
-    # === MDA 最新记录视图 ===
+    """Creates DuckDB views for common queries."""
+    # Latest mda_text per stock/year
     conn.execute(
         """
         CREATE OR REPLACE VIEW mda_text_latest AS
@@ -216,47 +122,7 @@ def _create_views(conn: duckdb.DuckDBPyConnection) -> None:
         """
     )
 
-    # === 年报处理进度总览视图 ===
-    conn.execute(
-        """
-        CREATE OR REPLACE VIEW reports_progress AS
-        SELECT
-            year,
-            COUNT(*) as total,
-            SUM(CASE WHEN download_status = 'success' THEN 1 ELSE 0 END) as downloaded,
-            SUM(CASE WHEN convert_status = 'success' THEN 1 ELSE 0 END) as converted,
-            SUM(CASE WHEN extract_status = 'success' THEN 1 ELSE 0 END) as extracted
-        FROM reports
-        GROUP BY year
-        ORDER BY year DESC;
-        """
-    )
-
-    # === 待下载任务视图 ===
-    conn.execute(
-        """
-        CREATE OR REPLACE VIEW pending_downloads AS
-        SELECT r.stock_code, c.short_name, r.year, r.url
-        FROM reports r
-        LEFT JOIN companies c ON r.stock_code = c.stock_code
-        WHERE r.download_status = 'pending'
-        ORDER BY r.year DESC, r.stock_code;
-        """
-    )
-
-    # === 待转换任务视图 ===
-    conn.execute(
-        """
-        CREATE OR REPLACE VIEW pending_converts AS
-        SELECT r.stock_code, c.short_name, r.year, r.pdf_path
-        FROM reports r
-        LEFT JOIN companies c ON r.stock_code = c.stock_code
-        WHERE r.download_status = 'success' AND r.convert_status = 'pending'
-        ORDER BY r.year DESC, r.stock_code;
-        """
-    )
-
-    # === 待审核 MDA 视图 ===
+    # MDA records needing review
     conn.execute(
         """
         CREATE OR REPLACE VIEW mda_needs_review AS
@@ -275,420 +141,465 @@ def _create_views(conn: duckdb.DuckDBPyConnection) -> None:
     )
 
 
-def insert_extraction_error(
+def _attach_sqlite(
     conn: duckdb.DuckDBPyConnection,
-    *,
-    stock_code: str | None,
-    year: int | None,
-    source_path: str,
-    source_sha256: str | None,
-    error_type: str,
-    error_message: str,
-    provider: str | None = None,
-    http_status: int | None = None,
-    trace_id: str | None = None,
+    sqlite_path: Path,
+    create_views: bool = False,
 ) -> None:
+    """Attaches SQLite database for federated queries.
+
+    After attaching, SQLite tables are accessible via the 'meta' schema:
+    - meta.companies
+    - meta.reports
+    - meta.extraction_rules
+    - etc.
+    """
+    conn.execute("INSTALL sqlite;")
+    conn.execute("LOAD sqlite;")
+    conn.execute(f"ATTACH '{sqlite_path}' AS meta (TYPE SQLITE, READ_ONLY);")
+
+    # Create federated views only if not read-only
+    if create_views:
+        _create_federated_views(conn)
+
+
+def _create_federated_views(conn: duckdb.DuckDBPyConnection) -> None:
+    """Creates views that join DuckDB and SQLite data."""
+    # Progress view using SQLite reports table
     conn.execute(
         """
-        INSERT INTO extraction_errors (
-            stock_code,
+        CREATE OR REPLACE VIEW reports_progress AS
+        SELECT
             year,
-            source_path,
-            source_sha256,
-            error_type,
-            error_message,
-            provider,
-            http_status,
-            trace_id,
-            created_at
+            COUNT(*) as total,
+            SUM(CASE WHEN download_status = 'success' THEN 1 ELSE 0 END) as downloaded,
+            SUM(CASE WHEN convert_status = 'success' THEN 1 ELSE 0 END) as converted,
+            SUM(CASE WHEN extract_status = 'success' THEN 1 ELSE 0 END) as extracted
+        FROM meta.reports
+        GROUP BY year
+        ORDER BY year DESC;
+        """
+    )
+
+    # Pending downloads view
+    conn.execute(
+        """
+        CREATE OR REPLACE VIEW pending_downloads AS
+        SELECT r.stock_code, c.short_name, r.year, r.url
+        FROM meta.reports r
+        LEFT JOIN meta.companies c ON r.stock_code = c.stock_code
+        WHERE r.download_status = 'pending'
+        ORDER BY r.year DESC, r.stock_code;
+        """
+    )
+
+    # Pending converts view
+    conn.execute(
+        """
+        CREATE OR REPLACE VIEW pending_converts AS
+        SELECT r.stock_code, c.short_name, r.year, r.pdf_path
+        FROM meta.reports r
+        LEFT JOIN meta.companies c ON r.stock_code = c.stock_code
+        WHERE r.download_status = 'success' AND r.convert_status = 'pending'
+        ORDER BY r.year DESC, r.stock_code;
+        """
+    )
+
+    # MDA with company info view
+    conn.execute(
+        """
+        CREATE OR REPLACE VIEW mda_with_company AS
+        SELECT
+            m.*,
+            c.short_name,
+            c.full_name,
+            c.trade_name
+        FROM mda_text_latest m
+        LEFT JOIN meta.companies c ON m.stock_code = c.stock_code;
+        """
+    )
+
+
+# =============================================================================
+# mda_text 表操作
+# =============================================================================
+
+
+def insert_mda_text(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    stock_code: str,
+    year: int,
+    mda_raw: str,
+    char_count: int,
+    page_index_start: int | None = None,
+    page_index_end: int | None = None,
+    page_count: int | None = None,
+    printed_page_start: int | None = None,
+    printed_page_end: int | None = None,
+    hit_start: str | None = None,
+    hit_end: str | None = None,
+    is_truncated: bool = False,
+    truncation_reason: str | None = None,
+    quality_flags: dict | None = None,
+    quality_detail: dict | None = None,
+    quality_score: int | None = None,
+    needs_review: bool = False,
+    source_path: str | None = None,
+    source_sha256: str | None = None,
+    extractor_version: str | None = None,
+    used_rule_type: str | None = None,
+    mda_review: str | None = None,
+    mda_outlook: str | None = None,
+    outlook_split_position: int | None = None,
+) -> None:
+    """Inserts a new MDA text record."""
+    import json
+
+    now = utc_now()
+    conn.execute(
+        """
+        INSERT INTO mda_text (
+            stock_code, year, mda_raw, char_count,
+            page_index_start, page_index_end, page_count,
+            printed_page_start, printed_page_end,
+            hit_start, hit_end,
+            is_truncated, truncation_reason,
+            quality_flags, quality_detail,
+            quality_score, needs_review,
+            source_path, source_sha256, extractor_version,
+            extracted_at, used_rule_type,
+            mda_review, mda_outlook, outlook_split_position
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (stock_code, year, source_sha256) DO UPDATE SET
+            mda_raw = EXCLUDED.mda_raw,
+            char_count = EXCLUDED.char_count,
+            page_index_start = EXCLUDED.page_index_start,
+            page_index_end = EXCLUDED.page_index_end,
+            page_count = EXCLUDED.page_count,
+            printed_page_start = EXCLUDED.printed_page_start,
+            printed_page_end = EXCLUDED.printed_page_end,
+            hit_start = EXCLUDED.hit_start,
+            hit_end = EXCLUDED.hit_end,
+            is_truncated = EXCLUDED.is_truncated,
+            truncation_reason = EXCLUDED.truncation_reason,
+            quality_flags = EXCLUDED.quality_flags,
+            quality_detail = EXCLUDED.quality_detail,
+            quality_score = EXCLUDED.quality_score,
+            needs_review = EXCLUDED.needs_review,
+            extractor_version = EXCLUDED.extractor_version,
+            extracted_at = EXCLUDED.extracted_at,
+            used_rule_type = EXCLUDED.used_rule_type,
+            mda_review = EXCLUDED.mda_review,
+            mda_outlook = EXCLUDED.mda_outlook,
+            outlook_split_position = EXCLUDED.outlook_split_position;
         """,
         (
             stock_code,
             year,
+            mda_raw,
+            char_count,
+            page_index_start,
+            page_index_end,
+            page_count,
+            printed_page_start,
+            printed_page_end,
+            hit_start,
+            hit_end,
+            is_truncated,
+            truncation_reason,
+            json.dumps(quality_flags) if quality_flags else None,
+            json.dumps(quality_detail) if quality_detail else None,
+            quality_score,
+            needs_review,
             source_path,
             source_sha256,
-            error_type,
-            error_message,
-            provider,
-            http_status,
-            trace_id,
-            utc_now(),
+            extractor_version,
+            now,
+            used_rule_type,
+            mda_review,
+            mda_outlook,
+            outlook_split_position,
         ),
     )
 
 
-# =============================================================================
-# companies 表操作
-# =============================================================================
-
-
-def upsert_company(
-    conn: duckdb.DuckDBPyConnection,
-    *,
-    stock_code: str,
-    short_name: str,
-    full_name: str | None = None,
-    plate: str | None = None,
-    trade: str | None = None,
-    trade_name: str | None = None,
-) -> None:
-    """插入或更新公司信息。"""
-    now = utc_now()
-    conn.execute(
-        """
-        INSERT INTO companies (stock_code, short_name, full_name, plate, trade, trade_name, first_seen_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (stock_code) DO UPDATE SET
-            short_name = EXCLUDED.short_name,
-            full_name = COALESCE(EXCLUDED.full_name, companies.full_name),
-            plate = COALESCE(EXCLUDED.plate, companies.plate),
-            trade = COALESCE(EXCLUDED.trade, companies.trade),
-            trade_name = COALESCE(EXCLUDED.trade_name, companies.trade_name),
-            updated_at = EXCLUDED.updated_at;
-        """,
-        (stock_code, short_name, full_name, plate, trade, trade_name, now, now),
-    )
-
-
-def get_company(
+def get_mda_text(
     conn: duckdb.DuckDBPyConnection,
     stock_code: str,
-) -> dict | None:
-    """获取公司信息。"""
+    year: int,
+) -> dict[str, Any] | None:
+    """Retrieves the latest MDA text record for a stock/year."""
     result = conn.execute(
-        "SELECT * FROM companies WHERE stock_code = ?",
-        (stock_code,),
+        """
+        SELECT * FROM mda_text_latest
+        WHERE stock_code = ? AND year = ?
+        """,
+        (stock_code, year),
     ).fetchone()
+
     if result is None:
         return None
+
     columns = [desc[0] for desc in conn.description]
     return dict(zip(columns, result))
 
 
-# =============================================================================
-# reports 表操作
-# =============================================================================
-
-
-def insert_report(
-    conn: duckdb.DuckDBPyConnection,
-    *,
-    stock_code: str,
-    year: int,
-    url: str,
-    title: str | None = None,
-    announcement_id: str | None = None,
-    publish_date: date | None = None,
-    source: str = "cninfo",
-) -> bool:
-    """插入年报记录（增量模式，已存在则跳过）。返回是否新增。"""
-    # 先检查是否已存在
-    existing = conn.execute(
-        "SELECT 1 FROM reports WHERE stock_code = ? AND year = ?",
-        (stock_code, year),
-    ).fetchone()
-    if existing is not None:
-        return False
-
-    now = utc_now()
-    conn.execute(
-        """
-        INSERT INTO reports (stock_code, year, url, title, announcement_id, publish_date, source, crawled_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-        """,
-        (stock_code, year, url, title, announcement_id, publish_date, source, now, now),
-    )
-    return True
-
-
-def update_report_status(
-    conn: duckdb.DuckDBPyConnection,
-    *,
-    stock_code: str,
-    year: int,
-    download_status: str | None = None,
-    convert_status: str | None = None,
-    extract_status: str | None = None,
-    pdf_path: str | None = None,
-    txt_path: str | None = None,
-    pdf_size_bytes: int | None = None,
-    pdf_sha256: str | None = None,
-    txt_sha256: str | None = None,
-    download_error: str | None = None,
-    convert_error: str | None = None,
-    extract_error: str | None = None,
-    downloaded_at: bool = False,
-    converted_at: bool = False,
-) -> None:
-    """更新年报处理状态。动态构建 SET 子句，仅更新非 None 字段。"""
-    updates = []
-    params = []
-
-    if download_status is not None:
-        updates.append("download_status = ?")
-        params.append(download_status)
-    if convert_status is not None:
-        updates.append("convert_status = ?")
-        params.append(convert_status)
-    if extract_status is not None:
-        updates.append("extract_status = ?")
-        params.append(extract_status)
-    if pdf_path is not None:
-        updates.append("pdf_path = ?")
-        params.append(pdf_path)
-    if txt_path is not None:
-        updates.append("txt_path = ?")
-        params.append(txt_path)
-    if pdf_size_bytes is not None:
-        updates.append("pdf_size_bytes = ?")
-        params.append(pdf_size_bytes)
-    if pdf_sha256 is not None:
-        updates.append("pdf_sha256 = ?")
-        params.append(pdf_sha256)
-    if txt_sha256 is not None:
-        updates.append("txt_sha256 = ?")
-        params.append(txt_sha256)
-    if download_error is not None:
-        updates.append("download_error = ?")
-        params.append(download_error)
-    if convert_error is not None:
-        updates.append("convert_error = ?")
-        params.append(convert_error)
-    if extract_error is not None:
-        updates.append("extract_error = ?")
-        params.append(extract_error)
-    if downloaded_at:
-        updates.append("downloaded_at = ?")
-        params.append(utc_now())
-    if converted_at:
-        updates.append("converted_at = ?")
-        params.append(utc_now())
-
-    if not updates:
-        return
-
-    updates.append("updated_at = ?")
-    params.append(utc_now())
-
-    params.extend([stock_code, year])
-
-    sql = f"UPDATE reports SET {', '.join(updates)} WHERE stock_code = ? AND year = ?"
-    conn.execute(sql, params)
-
-
-def get_pending_downloads(
-    conn: duckdb.DuckDBPyConnection,
-    *,
-    year: int | None = None,
-    limit: int | None = None,
-) -> list[dict]:
-    """获取待下载任务列表。"""
-    sql = """
-        SELECT r.stock_code, c.short_name, r.year, r.url, r.title
-        FROM reports r
-        LEFT JOIN companies c ON r.stock_code = c.stock_code
-        WHERE r.download_status = 'pending'
-    """
-    params = []
-
-    if year is not None:
-        sql += " AND r.year = ?"
-        params.append(year)
-
-    sql += " ORDER BY r.year DESC, r.stock_code"
-
-    if limit is not None:
-        sql += " LIMIT ?"
-        params.append(limit)
-
-    result = conn.execute(sql, params).fetchall()
-    columns = [desc[0] for desc in conn.description]
-    return [dict(zip(columns, row)) for row in result]
-
-
-def get_pending_converts(
-    conn: duckdb.DuckDBPyConnection,
-    *,
-    year: int | None = None,
-    limit: int | None = None,
-) -> list[dict]:
-    """获取待转换任务列表。"""
-    sql = """
-        SELECT r.stock_code, c.short_name, r.year, r.pdf_path, r.url
-        FROM reports r
-        LEFT JOIN companies c ON r.stock_code = c.stock_code
-        WHERE r.download_status = 'success' AND r.convert_status = 'pending'
-    """
-    params = []
-
-    if year is not None:
-        sql += " AND r.year = ?"
-        params.append(year)
-
-    sql += " ORDER BY r.year DESC, r.stock_code"
-
-    if limit is not None:
-        sql += " LIMIT ?"
-        params.append(limit)
-
-    result = conn.execute(sql, params).fetchall()
-    columns = [desc[0] for desc in conn.description]
-    return [dict(zip(columns, row)) for row in result]
-
-
-def report_exists(
+def mda_exists(
     conn: duckdb.DuckDBPyConnection,
     stock_code: str,
     year: int,
 ) -> bool:
-    """检查年报记录是否存在。"""
+    """Checks if an MDA text record exists for a stock/year."""
     result = conn.execute(
-        "SELECT 1 FROM reports WHERE stock_code = ? AND year = ?",
+        "SELECT 1 FROM mda_text WHERE stock_code = ? AND year = ? LIMIT 1",
         (stock_code, year),
     ).fetchone()
     return result is not None
 
 
-def get_report(
+def get_mda_stats(
     conn: duckdb.DuckDBPyConnection,
-    stock_code: str,
-    year: int,
-) -> dict | None:
-    """获取年报记录。"""
+) -> dict[str, Any]:
+    """Returns statistics about the MDA text table."""
     result = conn.execute(
-        "SELECT * FROM reports WHERE stock_code = ? AND year = ?",
-        (stock_code, year),
+        """
+        SELECT
+            COUNT(*) as total_records,
+            COUNT(DISTINCT stock_code) as unique_stocks,
+            COUNT(DISTINCT year) as unique_years,
+            AVG(char_count) as avg_char_count,
+            SUM(CASE WHEN needs_review THEN 1 ELSE 0 END) as needs_review_count,
+            AVG(quality_score) as avg_quality_score
+        FROM mda_text_latest
+        """
     ).fetchone()
-    if result is None:
-        return None
+
     columns = [desc[0] for desc in conn.description]
     return dict(zip(columns, result))
 
 
-# =============================================================================
-# LLM 相关表操作
-# =============================================================================
-
-
-def insert_llm_call_log(
+def get_mda_by_year(
     conn: duckdb.DuckDBPyConnection,
-    *,
-    stock_code: str | None,
-    year: int | None,
-    provider: str,
-    model: str,
-    prompt_type: str,
-    prompt_tokens: int,
-    completion_tokens: int,
-    latency_ms: int,
-    success: bool,
-    error_message: str | None = None,
-) -> None:
-    """插入 LLM 调用日志。"""
-    conn.execute(
-        """
-        INSERT INTO llm_call_logs (
-            stock_code, year, provider, model, prompt_type,
-            prompt_tokens, completion_tokens, latency_ms,
-            success, error_message, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        """,
-        (
-            stock_code,
-            year,
-            provider,
-            model,
-            prompt_type,
-            prompt_tokens,
-            completion_tokens,
-            latency_ms,
-            success,
-            error_message,
-            utc_now(),
-        ),
-    )
-
-
-def upsert_strategy_stats(
-    conn: duckdb.DuckDBPyConnection,
-    strategy: str,
-    success: bool,
-) -> None:
-    """更新策略统计。"""
-    conn.execute(
-        """
-        INSERT INTO strategy_stats (strategy, attempts, success, last_updated)
-        VALUES (?, 1, ?, ?)
-        ON CONFLICT (strategy) DO UPDATE SET
-            attempts = strategy_stats.attempts + 1,
-            success = strategy_stats.success + CASE WHEN ? THEN 1 ELSE 0 END,
-            last_updated = ?;
-        """,
-        (
-            strategy,
-            1 if success else 0,
-            utc_now(),
-            success,
-            utc_now(),
-        ),
-    )
-
-
-def get_strategy_stats(
-    conn: duckdb.DuckDBPyConnection,
-) -> dict[str, dict]:
-    """获取策略统计。"""
-    result = conn.execute("SELECT * FROM strategy_stats").fetchall()
-    if not result:
-        return {}
-
-    columns = [desc[0] for desc in conn.description]
-    stats = {}
-    for row in result:
-        row_dict = dict(zip(columns, row))
-        stats[row_dict["strategy"]] = {
-            "attempts": row_dict["attempts"],
-            "success": row_dict["success"],
-        }
-    return stats
-
-
-def upsert_extraction_rule(
-    conn: duckdb.DuckDBPyConnection,
-    *,
-    stock_code: str,
     year: int,
-    start_pattern: str,
-    end_pattern: str,
-    report_signature: str | None = None,
-    rule_source: str = "llm_learned",
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieves all MDA text records for a specific year."""
+    sql = """
+        SELECT * FROM mda_text_latest
+        WHERE year = ?
+        ORDER BY stock_code
+    """
+    params: list[Any] = [year]
+
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+
+    result = conn.execute(sql, params).fetchall()
+    columns = [desc[0] for desc in conn.description]
+    return [dict(zip(columns, row)) for row in result]
+
+
+def batch_update_mda_review_status(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    keys: list[tuple[str, int]],
+    needs_review: bool = False,
 ) -> None:
-    """插入或更新提取规则。"""
-    conn.execute(
-        """
-        INSERT INTO extraction_rules (
-            stock_code, year, report_signature,
-            start_pattern, end_pattern,
-            rule_source, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (stock_code, year) DO UPDATE SET
-            start_pattern = EXCLUDED.start_pattern,
-            end_pattern = EXCLUDED.end_pattern,
-            report_signature = EXCLUDED.report_signature,
-            rule_source = EXCLUDED.rule_source,
-            updated_at = EXCLUDED.updated_at;
-        """,
-        (
-            stock_code,
-            year,
-            report_signature,
-            start_pattern,
-            end_pattern,
-            rule_source,
-            utc_now(),
-        ),
+    """Batch updates the review status of multiple MDA records in DuckDB.
+
+    Args:
+        conn: DuckDB connection.
+        keys: List of (stock_code, year) tuples.
+        needs_review: New review status.
+    """
+    if not keys:
+        return
+
+    # DuckDB also supports (a, b) IN ((val1, val2), ...)
+    placeholders = ",".join(["(?, ?)"] * len(keys))
+    sql = f"UPDATE mda_text SET needs_review = ? WHERE (stock_code, year) IN ({placeholders})"
+
+    params = [needs_review]
+    for stock_code, year in keys:
+        params.extend([stock_code, year])
+
+    conn.execute(sql, params)
+
+
+# =============================================================================
+# 兼容性别名 (Deprecated - 使用 sqlite_db.py 替代)
+# =============================================================================
+
+# 以下函数已迁移到 sqlite_db.py，保留别名仅用于向后兼容
+# 请使用 from annual_report_mda import sqlite_db 并调用 sqlite_db.xxx()
+
+
+def _deprecated_warning(func_name: str) -> None:
+    import warnings
+
+    warnings.warn(
+        f"db.{func_name}() is deprecated. Use sqlite_db.{func_name}() instead.",
+        DeprecationWarning,
+        stacklevel=3,
     )
+
+
+def _drop_conn_arg(args: tuple) -> tuple:
+    """Drops the first argument if it looks like a database connection.
+
+    Old API passed a DuckDB connection as first arg, new API doesn't need it.
+    """
+    if args and hasattr(args[0], "execute"):
+        return args[1:]
+    return args
+
+
+def upsert_company(*args, **kwargs) -> None:
+    """Deprecated: Use sqlite_db.upsert_company() instead."""
+    _deprecated_warning("upsert_company")
+    from . import sqlite_db
+
+    if args and hasattr(args[0], "execute"):
+        sqlite_db.upsert_company(args[0], *args[1:], **kwargs)
+        return
+
+    with sqlite_db.connection_context() as conn:
+        sqlite_db.upsert_company(conn, *args, **kwargs)
+
+
+def get_company(*args, **kwargs):
+    """Deprecated: Use sqlite_db.get_company() instead."""
+    _deprecated_warning("get_company")
+    from . import sqlite_db
+
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.get_company(args[0], *args[1:], **kwargs)
+
+    with sqlite_db.connection_context(read_only=True) as conn:
+        return sqlite_db.get_company(conn, *args, **kwargs)
+
+
+def insert_report(*args, **kwargs) -> bool:
+    """Deprecated: Use sqlite_db.insert_report() instead."""
+    _deprecated_warning("insert_report")
+    from . import sqlite_db
+
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.insert_report(args[0], *args[1:], **kwargs)
+
+    with sqlite_db.connection_context() as conn:
+        return sqlite_db.insert_report(conn, *args, **kwargs)
+
+
+def update_report_status(*args, **kwargs) -> None:
+    """Deprecated: Use sqlite_db.update_report_status() instead."""
+    _deprecated_warning("update_report_status")
+    from . import sqlite_db
+
+    if args and hasattr(args[0], "execute"):
+        sqlite_db.update_report_status(args[0], *args[1:], **kwargs)
+        return
+
+    with sqlite_db.connection_context() as conn:
+        sqlite_db.update_report_status(conn, *args, **kwargs)
+
+
+def get_pending_downloads(*args, **kwargs) -> list[dict]:
+    """Deprecated: Use sqlite_db.get_pending_downloads() instead."""
+    _deprecated_warning("get_pending_downloads")
+    from . import sqlite_db
+
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.get_pending_downloads(args[0], *args[1:], **kwargs)
+
+    with sqlite_db.connection_context(read_only=True) as conn:
+        return sqlite_db.get_pending_downloads(conn, *args, **kwargs)
+
+
+def get_pending_converts(*args, **kwargs) -> list[dict]:
+    """Deprecated: Use sqlite_db.get_pending_converts() instead."""
+    _deprecated_warning("get_pending_converts")
+    from . import sqlite_db
+
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.get_pending_converts(args[0], *args[1:], **kwargs)
+
+    with sqlite_db.connection_context(read_only=True) as conn:
+        return sqlite_db.get_pending_converts(conn, *args, **kwargs)
+
+
+def report_exists(*args, **kwargs) -> bool:
+    """Deprecated: Use sqlite_db.report_exists() instead."""
+    _deprecated_warning("report_exists")
+    from . import sqlite_db
+
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.report_exists(args[0], *args[1:], **kwargs)
+
+    with sqlite_db.connection_context(read_only=True) as conn:
+        return sqlite_db.report_exists(conn, *args, **kwargs)
+
+
+def get_report(*args, **kwargs):
+    """Deprecated: Use sqlite_db.get_report() instead."""
+    _deprecated_warning("get_report")
+    from . import sqlite_db
+
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.get_report(args[0], *args[1:], **kwargs)
+
+    with sqlite_db.connection_context(read_only=True) as conn:
+        return sqlite_db.get_report(conn, *args, **kwargs)
+
+
+def insert_llm_call_log(*args, **kwargs) -> None:
+    """Deprecated: Use sqlite_db.insert_llm_call_log() instead."""
+    _deprecated_warning("insert_llm_call_log")
+    from . import sqlite_db
+
+    args = _drop_conn_arg(args)
+    with sqlite_db.connection_context() as conn:
+        sqlite_db.insert_llm_call_log(conn, *args, **kwargs)
+
+
+def upsert_strategy_stats(*args, **kwargs) -> None:
+    """Deprecated: Use sqlite_db.upsert_strategy_stats() instead."""
+    _deprecated_warning("upsert_strategy_stats")
+    from . import sqlite_db
+
+    args = _drop_conn_arg(args)
+    with sqlite_db.connection_context() as conn:
+        sqlite_db.upsert_strategy_stats(conn, *args, **kwargs)
+
+
+def get_strategy_stats(*args, **kwargs) -> dict:
+    """Deprecated: Use sqlite_db.get_strategy_stats() instead."""
+    _deprecated_warning("get_strategy_stats")
+    from . import sqlite_db
+
+    args = _drop_conn_arg(args)
+    with sqlite_db.connection_context(read_only=True) as conn:
+        return sqlite_db.get_strategy_stats(conn)
+
+
+def insert_extraction_error(*args, **kwargs) -> None:
+    """Deprecated: Use sqlite_db.insert_extraction_error() instead."""
+    _deprecated_warning("insert_extraction_error")
+    from . import sqlite_db
+
+    args = _drop_conn_arg(args)
+    with sqlite_db.connection_context() as conn:
+        sqlite_db.insert_extraction_error(conn, *args, **kwargs)
+
+
+def upsert_extraction_rule(*args, **kwargs) -> None:
+    """Deprecated: Use sqlite_db.upsert_extraction_rule() instead."""
+    _deprecated_warning("upsert_extraction_rule")
+    from . import sqlite_db
+
+    args = _drop_conn_arg(args)
+    with sqlite_db.connection_context() as conn:
+        sqlite_db.upsert_extraction_rule(conn, *args, **kwargs)

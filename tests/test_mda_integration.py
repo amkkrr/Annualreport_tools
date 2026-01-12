@@ -1,5 +1,8 @@
 """
 测试 mda_extractor.py 的端到端集成功能。
+
+注意: 在双数据库架构重构完成之前，这些测试被跳过。
+mda_extractor.py 需要适配同时访问 SQLite (元数据) 和 DuckDB (mda_text) 的架构。
 """
 
 import shutil
