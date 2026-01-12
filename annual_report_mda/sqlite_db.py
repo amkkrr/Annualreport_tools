@@ -352,6 +352,57 @@ def update_report_status(
     conn.execute(sql, params)
 
 
+def batch_update_report_status(
+    conn: sqlite3.Connection,
+    *,
+    keys: list[tuple[str, int]],
+    download_status: str | None = None,
+    convert_status: str | None = None,
+    extract_status: str | None = None,
+) -> None:
+    """Batch updates the status of multiple reports.
+
+    Args:
+        conn: SQLite connection.
+        keys: List of (stock_code, year) tuples.
+        download_status: New download status.
+        convert_status: New convert status.
+        extract_status: New extract status.
+    """
+    if not keys:
+        return
+
+    updates = []
+    params: list[Any] = []
+    now_iso = utc_now().isoformat()
+
+    for field, value in [
+        ("download_status", download_status),
+        ("convert_status", convert_status),
+        ("extract_status", extract_status),
+    ]:
+        if value is not None:
+            updates.append(f"{field} = ?")
+            params.append(value)
+
+    if not updates:
+        return
+
+    updates.append("updated_at = ?")
+    params.append(now_iso)
+
+    # We use multiple statements or a single one with multiple keys
+    # For simplicity and efficiency, we use a single UPDATE with IN clause if all same status
+    # or just execute in a loop within the same transaction.
+    # Since all keys get the same status in this batch function:
+    sql = f"UPDATE reports SET {', '.join(updates)} WHERE (stock_code, year) IN ({','.join(['(?, ?)'] * len(keys))})"
+
+    for stock_code, year in keys:
+        params.extend([stock_code, year])
+
+    conn.execute(sql, params)
+
+
 def get_pending_downloads(
     conn: sqlite3.Connection,
     *,

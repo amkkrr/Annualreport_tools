@@ -186,14 +186,13 @@ with col2:
         use_container_width=True,
     ):
         if selected_count > 0:
+            keys = [(row["stock_code"], int(row["year"])) for _, row in selected_rows.iterrows()]
             with sqlite_db.connection_context() as conn:
-                for _, row in selected_rows.iterrows():
-                    sqlite_db.update_report_status(
-                        conn,
-                        stock_code=row["stock_code"],
-                        year=int(row["year"]),
-                        download_status="pending",
-                    )
+                sqlite_db.batch_update_report_status(
+                    conn,
+                    keys=keys,
+                    download_status="pending",
+                )
             st.success(f"已重置 {selected_count} 条记录的下载状态")
             st.cache_data.clear()
             st.rerun()
@@ -206,14 +205,13 @@ with col3:
         use_container_width=True,
     ):
         if selected_count > 0:
+            keys = [(row["stock_code"], int(row["year"])) for _, row in selected_rows.iterrows()]
             with sqlite_db.connection_context() as conn:
-                for _, row in selected_rows.iterrows():
-                    sqlite_db.update_report_status(
-                        conn,
-                        stock_code=row["stock_code"],
-                        year=int(row["year"]),
-                        convert_status="pending",
-                    )
+                sqlite_db.batch_update_report_status(
+                    conn,
+                    keys=keys,
+                    convert_status="pending",
+                )
             st.success(f"已重置 {selected_count} 条记录的转换状态")
             st.cache_data.clear()
             st.rerun()
@@ -226,14 +224,13 @@ with col4:
         use_container_width=True,
     ):
         if selected_count > 0:
+            keys = [(row["stock_code"], int(row["year"])) for _, row in selected_rows.iterrows()]
             with sqlite_db.connection_context() as conn:
-                for _, row in selected_rows.iterrows():
-                    sqlite_db.update_report_status(
-                        conn,
-                        stock_code=row["stock_code"],
-                        year=int(row["year"]),
-                        extract_status="pending",
-                    )
+                sqlite_db.batch_update_report_status(
+                    conn,
+                    keys=keys,
+                    extract_status="pending",
+                )
             st.success(f"已重置 {selected_count} 条记录的提取状态")
             st.cache_data.clear()
             st.rerun()

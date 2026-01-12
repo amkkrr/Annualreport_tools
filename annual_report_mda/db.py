@@ -402,6 +402,33 @@ def get_mda_by_year(
     return [dict(zip(columns, row)) for row in result]
 
 
+def batch_update_mda_review_status(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    keys: list[tuple[str, int]],
+    needs_review: bool = False,
+) -> None:
+    """Batch updates the review status of multiple MDA records in DuckDB.
+
+    Args:
+        conn: DuckDB connection.
+        keys: List of (stock_code, year) tuples.
+        needs_review: New review status.
+    """
+    if not keys:
+        return
+
+    # DuckDB also supports (a, b) IN ((val1, val2), ...)
+    placeholders = ",".join(["(?, ?)"] * len(keys))
+    sql = f"UPDATE mda_text SET needs_review = ? WHERE (stock_code, year) IN ({placeholders})"
+
+    params = [needs_review]
+    for stock_code, year in keys:
+        params.extend([stock_code, year])
+
+    conn.execute(sql, params)
+
+
 # =============================================================================
 # 兼容性别名 (Deprecated - 使用 sqlite_db.py 替代)
 # =============================================================================
