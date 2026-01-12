@@ -1,0 +1,173 @@
+{
+  "project": "Annualreport_tools",
+  "version": "1.0.0",
+  "description": "Dual-database architecture schema (SQLite for metadata, DuckDB for analysis)",
+  "databases": {
+    "metadata": {
+      "engine": "SQLite",
+      "path": "data/metadata.db",
+      "purpose": "OLTP - High-frequency metadata updates, state management, and logs",
+      "tables": ["companies", "reports", "extraction_rules", "extraction_errors", "strategy_stats", "llm_call_logs"]
+    },
+    "analysis": {
+      "engine": "DuckDB",
+      "path": "data/annual_reports.duckdb",
+      "purpose": "OLAP - Large-scale text storage and complex analysis queries",
+      "tables": ["mda_text"],
+      "views": ["mda_text_latest", "reports_progress", "pending_tasks", "mda_needs_review"]
+    }
+  },
+  "tables": {
+    "companies": {
+      "engine": "SQLite",
+      "description": "上市公司基本信息维度表",
+      "primary_key": ["stock_code"],
+      "columns": {
+        "stock_code": { "type": "TEXT", "description": "6位股票代码 (主键)" },
+        "short_name": { "type": "TEXT", "description": "公司简称", "nullable": false },
+        "full_name": { "type": "TEXT", "description": "公司全称" },
+        "plate": { "type": "TEXT", "description": "板块代码" },
+        "trade": { "type": "TEXT", "description": "行业代码" },
+        "trade_name": { "type": "TEXT", "description": "行业名称" },
+        "first_seen_at": { "type": "TEXT", "description": "首次发现时间 (ISO 8601)" },
+        "updated_at": { "type": "TEXT", "description": "最后更新时间 (ISO 8601)" }
+      }
+    },
+    "reports": {
+      "engine": "SQLite",
+      "description": "年报元数据与全生命周期状态管理表",
+      "primary_key": ["stock_code", "year"],
+      "columns": {
+        "stock_code": { "type": "TEXT", "nullable": false },
+        "year": { "type": "INTEGER", "nullable": false },
+        "announcement_id": { "type": "TEXT" },
+        "title": { "type": "TEXT" },
+        "url": { "type": "TEXT", "nullable": false },
+        "publish_date": { "type": "TEXT" },
+        "download_status": { "type": "TEXT", "default": "pending" },
+        "convert_status": { "type": "TEXT", "default": "pending" },
+        "extract_status": { "type": "TEXT", "default": "pending" },
+        "download_error": { "type": "TEXT" },
+        "convert_error": { "type": "TEXT" },
+        "extract_error": { "type": "TEXT" },
+        "download_retries": { "type": "INTEGER", "default": 0 },
+        "convert_retries": { "type": "INTEGER", "default": 0 },
+        "pdf_path": { "type": "TEXT" },
+        "txt_path": { "type": "TEXT" },
+        "pdf_size_bytes": { "type": "INTEGER" },
+        "pdf_sha256": { "type": "TEXT" },
+        "txt_sha256": { "type": "TEXT" },
+        "crawled_at": { "type": "TEXT" },
+        "downloaded_at": { "type": "TEXT" },
+        "converted_at": { "type": "TEXT" },
+        "updated_at": { "type": "TEXT" },
+        "source": { "type": "TEXT", "default": "cninfo" }
+      }
+    },
+    "mda_text": {
+      "engine": "DuckDB",
+      "description": "MD&A 章节提取结果 (大字段文本存储在 DuckDB)",
+      "primary_key": ["stock_code", "year", "source_sha256"],
+      "columns": {
+        "stock_code": { "type": "VARCHAR" },
+        "year": { "type": "INTEGER" },
+        "mda_raw": { "type": "TEXT", "description": "提取的 MD&A 原文" },
+        "char_count": { "type": "INTEGER" },
+        "page_index_start": { "type": "INTEGER" },
+        "page_index_end": { "type": "INTEGER" },
+        "page_count": { "type": "INTEGER" },
+        "printed_page_start": { "type": "INTEGER" },
+        "printed_page_end": { "type": "INTEGER" },
+        "hit_start": { "type": "VARCHAR" },
+        "hit_end": { "type": "VARCHAR" },
+        "is_truncated": { "type": "BOOLEAN" },
+        "truncation_reason": { "type": "VARCHAR" },
+        "quality_flags": { "type": "JSON", "description": "质量标记数组" },
+        "quality_detail": { "type": "JSON", "description": "质量详情评分" },
+        "quality_score": { "type": "INTEGER", "description": "综合质量评分" },
+        "needs_review": { "type": "BOOLEAN", "default": false },
+        "source_path": { "type": "VARCHAR" },
+        "source_sha256": { "type": "VARCHAR" },
+        "extractor_version": { "type": "VARCHAR" },
+        "extracted_at": { "type": "TIMESTAMP" },
+        "used_rule_type": { "type": "VARCHAR" },
+        "mda_review": { "type": "TEXT", "description": "经营回顾部分" },
+        "mda_outlook": { "type": "TEXT", "description": "未来展望部分" },
+        "outlook_split_position": { "type": "INTEGER" }
+      }
+    },
+    "llm_call_logs": {
+      "engine": "SQLite",
+      "description": "LLM 调用日志与耗费统计",
+      "primary_key": ["id"],
+      "columns": {
+        "id": { "type": "INTEGER PRIMARY KEY AUTOINCREMENT" },
+        "stock_code": { "type": "TEXT" },
+        "year": { "type": "INTEGER" },
+        "provider": { "type": "TEXT" },
+        "model": { "type": "TEXT" },
+        "prompt_type": { "type": "TEXT" },
+        "prompt_tokens": { "type": "INTEGER" },
+        "completion_tokens": { "type": "INTEGER" },
+        "latency_ms": { "type": "INTEGER" },
+        "success": { "type": "INTEGER" },
+        "error_message": { "type": "TEXT" },
+        "created_at": { "type": "TEXT" }
+      }
+    },
+    "extraction_rules": {
+      "engine": "SQLite",
+      "description": "LLM 自适应学习生成的提取规则 (Start/End Pattern)",
+      "primary_key": ["stock_code", "year"],
+      "columns": {
+        "stock_code": { "type": "TEXT" },
+        "year": { "type": "INTEGER" },
+        "report_signature": { "type": "TEXT", "description": "年报结构特征签名" },
+        "start_pattern": { "type": "TEXT" },
+        "end_pattern": { "type": "TEXT" },
+        "rule_source": { "type": "TEXT", "default": "llm_learned" },
+        "updated_at": { "type": "TEXT" }
+      }
+    },
+    "extraction_errors": {
+      "engine": "SQLite",
+      "description": "提取过程中的异常记录",
+      "primary_key": ["id"],
+      "columns": {
+        "id": { "type": "INTEGER PRIMARY KEY AUTOINCREMENT" },
+        "stock_code": { "type": "TEXT" },
+        "year": { "type": "INTEGER" },
+        "source_path": { "type": "TEXT" },
+        "source_sha256": { "type": "TEXT" },
+        "error_type": { "type": "TEXT" },
+        "error_message": { "type": "TEXT" },
+        "provider": { "type": "TEXT" },
+        "http_status": { "type": "INTEGER" },
+        "trace_id": { "type": "TEXT" },
+        "created_at": { "type": "TEXT" }
+      }
+    },
+    "strategy_stats": {
+      "engine": "SQLite",
+      "description": "提取策略成功率统计",
+      "primary_key": ["strategy"],
+      "columns": {
+        "strategy": { "type": "TEXT PRIMARY KEY" },
+        "attempts": { "type": "INTEGER", "default": 0 },
+        "success": { "type": "INTEGER", "default": 0 },
+        "last_updated": { "type": "TEXT" }
+      }
+    }
+  },
+  "views": {
+    "mda_text_latest": {
+      "engine": "DuckDB",
+      "description": "每个公司年份取最新提取的 MDA 记录"
+    },
+    "reports_progress": {
+      "engine": "DuckDB",
+      "description": "跨库聚合进度视图 (需通过 ATTACH SQLite 实现)",
+      "sql": "SELECT r.year, COUNT(*) as total FROM sqlite_reports r GROUP BY r.year"
+    }
+  }
+}
