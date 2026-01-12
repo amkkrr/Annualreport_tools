@@ -44,9 +44,10 @@
 3. **text_analysis.py** – 多进程关键词分析器 + Excel导出。
 4. **text_analysis_universal.py** – 接受任意TXT目录的轻量级分析器。
 5. **mda_extractor.py** – 从年报文本中提取「管理层讨论与分析」(MD&A) 章节，支持多策略迭代提取。
-6. **webui/** – 基于 Streamlit 的 Web 管理界面，提供监控仪表盘、配置管理和任务管理功能。
-7. **资源文件（`/res`）** – 精选的年报主表和文档图标资源。
-8. **文档文件夹** – 存储在`docs/`下的双语文档，方便切换。
+6. **webui/** – 基于 Streamlit 的 Web 管理界面，提供监控仪表盘、配置管理、任务管理及**年报浏览器**功能。
+7. **双数据库架构 (SQLite + DuckDB)** – OLTP (元数据) 与 OLAP (分析) 分离，解决并发锁冲突。
+8. **资源文件（`/res`）** – 精选的年报主表和文档图标资源。
+9. **文档文件夹** – 存储在`docs/`下的双语文档，方便切换。
 
 ## 快速开始
 
@@ -64,8 +65,9 @@
 | `2.pdf_batch_converter.py`                | 批量下载 + pdfplumber转换，带文件验证，支持 DuckDB 任务队列     |
 | `3.text_analysis.py`                      | 多进程关键词分析，Excel导出               |
 | `text_analysis_universal.py`              | 适用于任意TXT文件夹的轻量级分析器         |
-| `mda_extractor.py`                        | MD&A 章节提取器，支持批量处理与增量模式   |
+| `mda_extractor.py`                        | MD&A 章节提取器，支持批量处理与增量模式，支持双数据库存储   |
 | `scripts/migrate_excel_to_duckdb.py`      | Excel → DuckDB 数据迁移脚本               |
+| `scripts/migrate_duckdb_to_sqlite.py`      | 双数据库架构迁移脚本 (DuckDB -> SQLite)   |
 | `scripts/llm_annotate.py`                 | LLM 辅助标注工具，生成黄金数据集          |
 | `scripts/evaluate_extraction.py`          | 提取质量评估，支持规则+LLM 双模式         |
 | `scripts/auto_improve.py`                 | 自动分析失败模式并生成改进建议            |
@@ -131,12 +133,17 @@ python mda_extractor.py --dir data/annual_reports_text/ --dry-run
 
 ### 输出
 
-提取结果存入 DuckDB 数据库 `mda_text` 表，包含：
-- `mda_raw`: 提取的 MD&A 原文
-- `char_count`: 字符数
-- `page_index_start/end`: 页范围
-- `quality_flags`: 质量标记（如 `FLAG_LENGTH_ABNORMAL`）
-- `source_sha256`: 源文件哈希（用于增量判定）
+提取结果存入双数据库架构：
+- **DuckDB (`mda_text` 表)**:
+    - `mda_raw`: 提取的 MD&A 原文
+    - `char_count`: 字符数
+    - `page_index_start/end`: 页范围
+    - `quality_flags`: 质量标记
+    - `source_sha256`: 源文件哈希
+- **SQLite (`reports` 表)**:
+    - `extract_status`: 提取状态同步更新
+    - `quality_score`: 质量评分
+    - `needs_review`: 是否需要人工审核
 
 ## 依赖要求
 
@@ -174,7 +181,7 @@ pip install -r requirements.txt
 
 | 日期       | 亮点                                                          |
 | ---------- | ------------------------------------------------------------- |
-| 2026/01/11 | **Streamlit WebUI**：新增 Web 管理界面（监控仪表盘、配置管理、任务管理）|
+| 2026/01/12 | **双数据库架构升级**：引入 SQLite (OLTP) 存储元数据，DuckDB (OLAP) 存储分析结果，解决 WebUI 与爬虫并发冲突 |\n| 2026/01/11 | **Streamlit WebUI**：新增 Web 管理界面（监控仪表盘、配置管理、任务管理、年报浏览器）|
 | 2026/01/11 | **日志系统完善**：统一配置与文件轮转，新增 test_logging.py 测试 |
 | 2026/01/11 | **M2.5 验收通过**：完成端到端测试、L3 时序校验、测试覆盖率达标 |
 | 2026/01/11 | **M2 验收准备**：新增 Schema 迁移脚本、质量评分回填脚本、M2 验收测试 |
@@ -203,6 +210,7 @@ pip install -r requirements.txt
 > 详细开发计划与验收标准请参阅 [TODO.md](./TODO.md)
 
 - [x] **M1 配置统一 + DuckDB 底座** — 统一配置管理，DuckDB 替代 Excel 作为数据枢纽（完成于 2026-01-08）
+- [x] **M1.5 双数据库并发架构** — 引入 SQLite 解决单写锁导致的 WebUI 并发冲突（完成于 2026-01-12）
 - [x] **M2 结构化提取 + 质量评估** — 提升 MD&A 提取准确率，建立质量评分闭环（完成于 2026-01-11）
 - [x] **M2.5 MD&A 提取器测试与质检** — 端到端测试、L3 时序校验、文档完善（完成于 2026-01-11）
 - [ ] **M3 NLP 深度分析** — 情感分析、相似度分析、LDA 主题模型
