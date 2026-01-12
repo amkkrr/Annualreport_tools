@@ -193,3 +193,42 @@ with tab3:
                     st.rerun()
     else:
         st.success("没有待审核的 MDA。")
+
+st.divider()
+st.subheader("危险区域 (全局操作)")
+st.warning("以下操作将影响数据库中所有符合条件的记录，请谨慎操作。")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    with st.popover("清理下载队列"):
+        st.write("将所有 '待下载' 状态重置为 '已跳过'")
+        if st.button("确认清理下载队列", type="primary", key="btn_clear_all_downloads"):
+            count = db_utils.clear_all_pending_downloads()
+            st.success(f"已清理 {count} 条下载记录")
+            st.cache_data.clear()
+            st.rerun()
+
+with col2:
+    with st.popover("清理转换队列"):
+        st.write("将所有 '待转换' 状态重置为 '已跳过'")
+        if st.button("确认清理转换队列", type="primary", key="btn_clear_all_converts"):
+            count = db_utils.clear_all_pending_converts()
+            st.success(f"已清理 {count} 条转换记录")
+            st.cache_data.clear()
+            st.rerun()
+
+with col3:
+    with st.popover("重置失败记录"):
+        phase = st.selectbox(
+            "选择阶段",
+            ["download", "convert", "extract"],
+            format_func=lambda x: {"download": "下载", "convert": "转换", "extract": "提取"}.get(
+                x, x
+            ),
+        )
+        if st.button("确认重置失败记录", type="primary", key="btn_reset_all_failed"):
+            count = db_utils.reset_all_failed(phase)
+            st.success(f"已重置 {count} 条失败记录")
+            st.cache_data.clear()
+            st.rerun()

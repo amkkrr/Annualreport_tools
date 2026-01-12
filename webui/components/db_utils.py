@@ -360,6 +360,24 @@ def search_reports(
         conn.close()
 
 
+def clear_all_pending_downloads() -> int:
+    """Wrapper for sqlite_db.clear_all_pending_downloads."""
+    with sqlite_db.connection_context() as conn:
+        return sqlite_db.clear_all_pending_downloads(conn)
+
+
+def clear_all_pending_converts() -> int:
+    """Wrapper for sqlite_db.clear_all_pending_converts."""
+    with sqlite_db.connection_context() as conn:
+        return sqlite_db.clear_all_pending_converts(conn)
+
+
+def reset_all_failed(phase: str) -> int:
+    """Wrapper for sqlite_db.reset_all_failed."""
+    with sqlite_db.connection_context() as conn:
+        return sqlite_db.reset_all_failed(conn, phase)
+
+
 # =============================================================================
 # Deprecated Compatibility Functions
 # =============================================================================

@@ -403,6 +403,49 @@ def batch_update_report_status(
     conn.execute(sql, params)
 
 
+def clear_all_pending_downloads(conn: sqlite3.Connection) -> int:
+    """Sets download_status='skipped' for all 'pending' records."""
+    now_iso = utc_now().isoformat()
+    cursor = conn.execute(
+        "UPDATE reports SET download_status = 'skipped', updated_at = ? WHERE download_status = 'pending'",
+        (now_iso,),
+    )
+    return cursor.rowcount
+
+
+def clear_all_pending_converts(conn: sqlite3.Connection) -> int:
+    """Sets convert_status='skipped' for all 'pending' records."""
+    now_iso = utc_now().isoformat()
+    cursor = conn.execute(
+        "UPDATE reports SET convert_status = 'skipped', updated_at = ? WHERE convert_status = 'pending'",
+        (now_iso,),
+    )
+    return cursor.rowcount
+
+
+def reset_all_failed(conn: sqlite3.Connection, phase: str) -> int:
+    """Resets 'failed' status to 'pending' for a specific phase."""
+    now_iso = utc_now().isoformat()
+    if phase == "download":
+        cursor = conn.execute(
+            "UPDATE reports SET download_status = 'pending', download_error = NULL, updated_at = ? WHERE download_status = 'failed'",
+            (now_iso,),
+        )
+    elif phase == "convert":
+        cursor = conn.execute(
+            "UPDATE reports SET convert_status = 'pending', convert_error = NULL, updated_at = ? WHERE convert_status = 'failed'",
+            (now_iso,),
+        )
+    elif phase == "extract":
+        cursor = conn.execute(
+            "UPDATE reports SET extract_status = 'pending', extract_error = NULL, updated_at = ? WHERE extract_status = 'failed'",
+            (now_iso,),
+        )
+    else:
+        raise ValueError(f"Invalid phase: {phase}")
+    return cursor.rowcount
+
+
 def get_pending_downloads(
     conn: sqlite3.Connection,
     *,
