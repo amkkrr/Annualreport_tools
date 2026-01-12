@@ -435,7 +435,10 @@ def upsert_company(*args, **kwargs) -> None:
     _deprecated_warning("upsert_company")
     from . import sqlite_db
 
-    args = _drop_conn_arg(args)
+    if args and hasattr(args[0], "execute"):
+        sqlite_db.upsert_company(args[0], *args[1:], **kwargs)
+        return
+
     with sqlite_db.connection_context() as conn:
         sqlite_db.upsert_company(conn, *args, **kwargs)
 
@@ -445,7 +448,9 @@ def get_company(*args, **kwargs):
     _deprecated_warning("get_company")
     from . import sqlite_db
 
-    args = _drop_conn_arg(args)
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.get_company(args[0], *args[1:], **kwargs)
+
     with sqlite_db.connection_context(read_only=True) as conn:
         return sqlite_db.get_company(conn, *args, **kwargs)
 
@@ -455,7 +460,9 @@ def insert_report(*args, **kwargs) -> bool:
     _deprecated_warning("insert_report")
     from . import sqlite_db
 
-    args = _drop_conn_arg(args)
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.insert_report(args[0], *args[1:], **kwargs)
+
     with sqlite_db.connection_context() as conn:
         return sqlite_db.insert_report(conn, *args, **kwargs)
 
@@ -465,7 +472,10 @@ def update_report_status(*args, **kwargs) -> None:
     _deprecated_warning("update_report_status")
     from . import sqlite_db
 
-    args = _drop_conn_arg(args)
+    if args and hasattr(args[0], "execute"):
+        sqlite_db.update_report_status(args[0], *args[1:], **kwargs)
+        return
+
     with sqlite_db.connection_context() as conn:
         sqlite_db.update_report_status(conn, *args, **kwargs)
 
@@ -475,7 +485,9 @@ def get_pending_downloads(*args, **kwargs) -> list[dict]:
     _deprecated_warning("get_pending_downloads")
     from . import sqlite_db
 
-    args = _drop_conn_arg(args)
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.get_pending_downloads(args[0], *args[1:], **kwargs)
+
     with sqlite_db.connection_context(read_only=True) as conn:
         return sqlite_db.get_pending_downloads(conn, *args, **kwargs)
 
@@ -485,7 +497,9 @@ def get_pending_converts(*args, **kwargs) -> list[dict]:
     _deprecated_warning("get_pending_converts")
     from . import sqlite_db
 
-    args = _drop_conn_arg(args)
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.get_pending_converts(args[0], *args[1:], **kwargs)
+
     with sqlite_db.connection_context(read_only=True) as conn:
         return sqlite_db.get_pending_converts(conn, *args, **kwargs)
 
@@ -495,7 +509,9 @@ def report_exists(*args, **kwargs) -> bool:
     _deprecated_warning("report_exists")
     from . import sqlite_db
 
-    args = _drop_conn_arg(args)
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.report_exists(args[0], *args[1:], **kwargs)
+
     with sqlite_db.connection_context(read_only=True) as conn:
         return sqlite_db.report_exists(conn, *args, **kwargs)
 
@@ -505,7 +521,9 @@ def get_report(*args, **kwargs):
     _deprecated_warning("get_report")
     from . import sqlite_db
 
-    args = _drop_conn_arg(args)
+    if args and hasattr(args[0], "execute"):
+        return sqlite_db.get_report(args[0], *args[1:], **kwargs)
+
     with sqlite_db.connection_context(read_only=True) as conn:
         return sqlite_db.get_report(conn, *args, **kwargs)
 

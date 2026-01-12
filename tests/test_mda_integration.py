@@ -16,9 +16,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from annual_report_mda.db import init_db
 from mda_extractor import main
 
-# 跳过所有集成测试，直到 mda_extractor.py 完成双数据库适配
-pytestmark = pytest.mark.skip(reason="mda_extractor.py 需要适配双数据库架构 (SQLite + DuckDB)")
-
 
 class TestEndToEndSingleFile:
     """测试单文件端到端流程。"""
