@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -82,12 +83,19 @@ def stop_task(task_name: TaskName) -> bool:
         return False
 
     try:
-        proc.terminate()
-        proc.wait(timeout=5)
-        st.success(f"任务 '{TASK_LABELS[task_name]}' 已停止。")
-    except psutil.TimeoutExpired:
-        proc.kill()
-        st.warning("任务未能优雅停止，已强制终止。")
+        # 获取所有子进程并尝试停止它们
+        procs = proc.children(recursive=True) + [proc]
+        for p in procs:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                p.terminate()
+
+        # 等待进程终止
+        gone, alive = psutil.wait_procs(procs, timeout=5)
+        for p in alive:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                p.kill()
+
+        st.success(f"任务 '{TASK_LABELS[task_name]}' 及其相关进程已停止。")
     except psutil.Error as e:
         st.error(f"停止任务时出错: {e}")
         return False
