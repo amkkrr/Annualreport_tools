@@ -65,3 +65,26 @@ updated_at: 2026-01-13
 使用 SQLite 数据源: data/metadata.db
 从数据库加载 1 条待下载任务  # 2023 年有 1 条待下载任务
 ```
+
+---
+
+## 追加修复: extractor 任务缺少默认输入目录
+
+### 问题描述
+WebUI 启动 "提取 MDA" 任务时报错:
+```
+使用配置模式但未指定 --text 或 --dir，请指定输入路径。
+```
+
+### 根因
+- WebUI 只传递 `--use-config` 参数
+- `mda_extractor.py` 的 `_run_with_yaml_config()` 要求必须同时传递 `--text` 或 `--dir`
+- `MdaConfig` 没有定义 `input_dir` 字段
+
+### 提交 4: a8e22d2
+**修复**: 在配置中添加默认输入目录
+
+修改内容:
+1. `MdaBehaviorConfig` 添加 `input_dir` 字段，默认值 `outputs/annual_reports`
+2. `config.yaml.example` 添加 `input_dir` 配置示例
+3. `mda_extractor.py` 优先使用 `--dir` 参数，其次使用配置文件中的 `input_dir`
