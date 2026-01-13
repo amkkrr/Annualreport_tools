@@ -36,6 +36,10 @@ crawler:
   # 目标年份列表，支持单年或多年
   target_years: [2023]
 
+  # 输出模式: "excel" (传统 Excel 文件) 或 "duckdb" (数据库模式，推荐)
+  # 使用 duckdb 模式时，下载转换器将从 SQLite 数据库读取待下载任务
+  output_mode: duckdb
+
   # 请求控制
   request:
     timeout: 10

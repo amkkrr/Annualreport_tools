@@ -122,10 +122,13 @@ class CrawlerOutputConfig(BaseModel):
 class CrawlerConfig(BaseModel):
     """爬虫模块配置。"""
 
-    target_years: list[int] = Field(min_length=1)
+    target_years: list[int] = Field(min_length=1, alias="years")
     request: CrawlerRequestConfig = Field(default_factory=CrawlerRequestConfig)
     filters: CrawlerFiltersConfig = Field(default_factory=CrawlerFiltersConfig)
     output: CrawlerOutputConfig = Field(default_factory=CrawlerOutputConfig)
+    output_mode: str = Field(default="excel", pattern="^(excel|duckdb)$")
+
+    model_config = {"populate_by_name": True}
 
     @field_validator("target_years")
     @classmethod

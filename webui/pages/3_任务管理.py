@@ -35,7 +35,7 @@ tasks_meta = {
     "converter": {
         "label": "下载转换",
         "column": col2,
-        "args": ["--use-config"],
+        "args": ["--use-yaml-config"],
         "queues": [
             ("待下载", pending_downloads),
             ("待转换", pending_converts),
