@@ -296,6 +296,7 @@ def _submit_jobs(
             conn, stock_code=stock_code, year=year, source_sha256=source_sha256
         ):
             _LOG.info("增量跳过: %s", path)
+            _update_sqlite_extract_status(stock_code, year, "success")
             continue
 
         # In a federated setup, extraction_rules might be in SQLite (attached as 'meta')
@@ -537,6 +538,7 @@ def _run_with_yaml_config(args: argparse.Namespace) -> int:
             conn, stock_code=stock_code, year=year, source_sha256=source_sha256
         ):
             _LOG.info("增量跳过: %s", path)
+            _update_sqlite_extract_status(stock_code, year, "success")
             return 0
 
         rule_row = conn.execute(
@@ -709,6 +711,7 @@ def main(argv: list[str] | None = None) -> int:
             conn, stock_code=stock_code, year=year, source_sha256=source_sha256
         ):
             _LOG.info("增量跳过: %s", path)
+            _update_sqlite_extract_status(stock_code, year, "success")
             return 0
 
         # Try meta schema first, then local
