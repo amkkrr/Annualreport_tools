@@ -30,22 +30,24 @@ tasks_meta = {
         "label": "爬取链接",
         "column": col1,
         "args": ["--use-config"],
-        "queue_label": "待下载",
-        "queue_count": pending_downloads,
+        "queues": [],
     },
     "converter": {
         "label": "下载转换",
         "column": col2,
-        "args": ["--use-config"],
-        "queue_label": "待转换",
-        "queue_count": pending_converts,
+        "args": ["--use-yaml-config"],
+        "queues": [
+            ("待下载", pending_downloads),
+            ("待转换", pending_converts),
+        ],
     },
     "extractor": {
         "label": "提取 MDA",
         "column": col3,
         "args": ["--use-config"],
-        "queue_label": "待提取",
-        "queue_count": pending_extractions,
+        "queues": [
+            ("待提取", pending_extractions),
+        ],
     },
 }
 
@@ -63,7 +65,12 @@ for task_key, meta in tasks_meta.items():
 
             st.markdown(f"**{meta['label']}**")
             st.markdown(f"状态: :{color}[{text}]")
-            st.markdown(f"{meta['queue_label']}: {meta['queue_count']} 条")
+
+            if meta["queues"]:
+                for q_label, q_count in meta["queues"]:
+                    st.markdown(f"{q_label}: {q_count} 条")
+            else:
+                st.markdown("&nbsp;")  # 占位保持高度一致
 
             c1, c2 = st.columns(2)
 

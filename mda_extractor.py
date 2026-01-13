@@ -9,7 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from annual_report_mda import EXTRACTOR_VERSION
+from annual_report_mda import EXTRACTOR_VERSION, sqlite_db
 from annual_report_mda.data_manager import (
     MDAUpsertRecord,
     compute_file_sha256,
@@ -46,6 +46,31 @@ def _infer_stock_year(path: Path) -> tuple[str | None, int | None]:
     years = _YEAR_RE.findall(path.stem)
     year = int(years[-1]) if years else None
     return stock, year
+
+
+def _update_sqlite_extract_status(
+    stock_code: str | None,
+    year: int | None,
+    status: str,
+    error_message: str | None = None,
+) -> None:
+    """Update extract_status in SQLite database.
+
+    This keeps the WebUI's pending_extractions count in sync with actual progress.
+    """
+    if stock_code is None or year is None:
+        return
+    try:
+        with sqlite_db.connection_context() as conn:
+            sqlite_db.update_report_status(
+                conn,
+                stock_code=stock_code,
+                year=year,
+                extract_status=status,
+                extract_error=error_message,
+            )
+    except Exception as e:
+        _LOG.warning("Failed to update SQLite extract_status: %s", e)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -271,6 +296,7 @@ def _submit_jobs(
             conn, stock_code=stock_code, year=year, source_sha256=source_sha256
         ):
             _LOG.info("增量跳过: %s", path)
+            _update_sqlite_extract_status(stock_code, year, "success")
             continue
 
         # In a federated setup, extraction_rules might be in SQLite (attached as 'meta')
@@ -512,6 +538,7 @@ def _run_with_yaml_config(args: argparse.Namespace) -> int:
             conn, stock_code=stock_code, year=year, source_sha256=source_sha256
         ):
             _LOG.info("增量跳过: %s", path)
+            _update_sqlite_extract_status(stock_code, year, "success")
             return 0
 
         rule_row = conn.execute(
@@ -550,6 +577,7 @@ def _run_with_yaml_config(args: argparse.Namespace) -> int:
                 error_type="EXTRACT_EXCEPTION",
                 error_message=str(e),
             )
+            _update_sqlite_extract_status(stock_code, year, "failed", str(e))
             raise
 
         if not res.get("ok"):
@@ -563,15 +591,25 @@ def _run_with_yaml_config(args: argparse.Namespace) -> int:
                 error_type=err.get("error_type") or "UNKNOWN",
                 error_message=err.get("error_message") or "",
             )
+            _update_sqlite_extract_status(
+                err.get("stock_code"),
+                err.get("year"),
+                "failed",
+                err.get("error_message"),
+            )
             return 2
 
         record = MDAUpsertRecord(**res["record"])
         upsert_mda_text(conn, record)
+        _update_sqlite_extract_status(record.stock_code, record.year, "success")
         _LOG.info("写入完成: %s %s sha=%s", record.stock_code, record.year, record.source_sha256)
         return 0
 
     if args.dir:
         root = Path(args.dir)
+    elif mda_cfg.behavior.input_dir:
+        root = Path(mda_cfg.behavior.input_dir)
+        _LOG.info("使用配置文件中的默认输入目录: %s", root)
     else:
         _LOG.info("使用配置模式但未指定 --text 或 --dir，请指定输入路径。")
         return 2
@@ -603,6 +641,7 @@ def _run_with_yaml_config(args: argparse.Namespace) -> int:
             ok_count += 1
             record = MDAUpsertRecord(**item["record"])
             upsert_mda_text(conn, record)
+            _update_sqlite_extract_status(record.stock_code, record.year, "success")
         else:
             err_count += 1
             err = item.get("error") or {}
@@ -614,6 +653,12 @@ def _run_with_yaml_config(args: argparse.Namespace) -> int:
                 source_sha256=err.get("source_sha256"),
                 error_type=err.get("error_type") or "UNKNOWN",
                 error_message=err.get("error_message") or "",
+            )
+            _update_sqlite_extract_status(
+                err.get("stock_code"),
+                err.get("year"),
+                "failed",
+                err.get("error_message"),
             )
 
     _LOG.info("完成: ok=%d err=%d", ok_count, err_count)
@@ -666,6 +711,7 @@ def main(argv: list[str] | None = None) -> int:
             conn, stock_code=stock_code, year=year, source_sha256=source_sha256
         ):
             _LOG.info("增量跳过: %s", path)
+            _update_sqlite_extract_status(stock_code, year, "success")
             return 0
 
         # Try meta schema first, then local
@@ -719,6 +765,7 @@ def main(argv: list[str] | None = None) -> int:
                 error_type="EXTRACT_EXCEPTION",
                 error_message=str(e),
             )
+            _update_sqlite_extract_status(stock_code, year, "failed", str(e))
             raise
 
         if not res.get("ok"):
@@ -732,6 +779,12 @@ def main(argv: list[str] | None = None) -> int:
                 error_type=err.get("error_type") or "UNKNOWN",
                 error_message=err.get("error_message") or "",
             )
+            _update_sqlite_extract_status(
+                err.get("stock_code"),
+                err.get("year"),
+                "failed",
+                err.get("error_message"),
+            )
             return 2
 
         record = MDAUpsertRecord(**res["record"])
@@ -742,6 +795,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         upsert_mda_text(conn, record)
+        _update_sqlite_extract_status(record.stock_code, record.year, "success")
         _LOG.info("写入完成: %s %s sha=%s", record.stock_code, record.year, record.source_sha256)
         return 0
 
@@ -770,6 +824,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             record = MDAUpsertRecord(**item["record"])
             upsert_mda_text(conn, record)
+            _update_sqlite_extract_status(record.stock_code, record.year, "success")
         else:
             err_count += 1
             err = item.get("error") or {}
@@ -781,6 +836,12 @@ def main(argv: list[str] | None = None) -> int:
                 source_sha256=err.get("source_sha256"),
                 error_type=err.get("error_type") or "UNKNOWN",
                 error_message=err.get("error_message") or "",
+            )
+            _update_sqlite_extract_status(
+                err.get("stock_code"),
+                err.get("year"),
+                "failed",
+                err.get("error_message"),
             )
 
     _LOG.info("完成: ok=%d err=%d dry_run=%s", ok_count, err_count, args.dry_run)

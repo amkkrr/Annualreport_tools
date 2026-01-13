@@ -724,14 +724,18 @@ class AnnualReportProcessor:
         return filtered
 
     def _load_tasks_from_duckdb(self) -> list:
-        """从 DuckDB 加载待处理任务。"""
+        """从数据库加载待处理任务。
+
+        注意: 方法名保留 'duckdb' 是为了向后兼容，实际上使用 SQLite 连接
+        查询 reports 表中的待下载任务。
+        """
         if self.db_conn is None:
             raise RuntimeError("未提供数据库连接")
 
-        from annual_report_mda.db import get_pending_downloads
+        from annual_report_mda import sqlite_db
 
-        tasks = get_pending_downloads(self.db_conn, year=self.config.target_year)
-        logging.info(f"从 DuckDB 加载 {len(tasks)} 条待下载任务")
+        tasks = sqlite_db.get_pending_downloads(self.db_conn, year=self.config.target_year)
+        logging.info(f"从数据库加载 {len(tasks)} 条待下载任务")
         return tasks
 
     def _update_task_status_in_db(
@@ -743,14 +747,14 @@ class AnnualReportProcessor:
         txt_path: str | None = None,
         error: str | None = None,
     ) -> None:
-        """更新任务状态到 DuckDB。"""
+        """更新任务状态到数据库。"""
         if self.db_conn is None:
             return
 
-        from annual_report_mda.db import update_report_status
+        from annual_report_mda import sqlite_db
 
         if success:
-            update_report_status(
+            sqlite_db.update_report_status(
                 self.db_conn,
                 stock_code=stock_code,
                 year=year,
@@ -762,7 +766,7 @@ class AnnualReportProcessor:
                 converted_at=True,
             )
         else:
-            update_report_status(
+            sqlite_db.update_report_status(
                 self.db_conn,
                 stock_code=stock_code,
                 year=year,
@@ -780,7 +784,7 @@ class AnnualReportProcessor:
         logging.info("年报批量下载转换程序启动")
         logging.info(f"目标年份: {self.config.target_year}")
         logging.info(f"删除PDF: {self.config.delete_pdf}")
-        logging.info(f"数据源: {'DuckDB' if self.db_conn else 'Excel'}")
+        logging.info(f"数据源: {'数据库' if self.db_conn else 'Excel'}")
         logging.info("=" * 60)
 
         # 准备目录
@@ -1001,6 +1005,9 @@ def _run_download_from_args(args: argparse.Namespace) -> None:
         years = [args.year]
 
     # 确定数据源：--legacy 强制使用 Excel
+    # 注意: "duckdb" 模式实际上是指使用双数据库架构:
+    # - SQLite (metadata.db): 存储 companies/reports 表，包括下载状态
+    # - DuckDB (annual_reports.duckdb): 存储 mda_text 表 (OLAP 分析)
     use_duckdb = (args.source == "duckdb") and (not args.legacy)
     db_conn = None
 
@@ -1009,10 +1016,11 @@ def _run_download_from_args(args: argparse.Namespace) -> None:
         raise SystemExit("使用 Excel 数据源时必须指定 --excel-file 参数")
 
     if use_duckdb:
-        from annual_report_mda.db import init_db
+        from annual_report_mda import sqlite_db
 
-        db_conn = init_db(args.db_path)
-        logging.info(f"使用 DuckDB 数据源: {args.db_path}")
+        sqlite_path = "data/metadata.db"
+        db_conn = sqlite_db.get_connection(sqlite_path)
+        logging.info(f"使用 SQLite 数据源: {sqlite_path}")
 
     for year in years:
         config = ConverterConfig(
@@ -1091,17 +1099,37 @@ def _run_with_yaml_config(args: argparse.Namespace) -> None:
     crawler_cfg = config.crawler
 
     # 确定数据源模式
+    # 注意: "duckdb" 模式实际上是指使用双数据库架构:
+    # - SQLite (metadata.db): 存储 companies/reports 表，包括下载状态
+    # - DuckDB (annual_reports.duckdb): 存储 mda_text 表 (OLAP 分析)
+    # 待下载任务需要从 SQLite 查询，不是 DuckDB
     use_duckdb = getattr(crawler_cfg, "output_mode", "excel") == "duckdb"
     db_conn = None
 
     if use_duckdb:
-        from annual_report_mda.db import init_db
+        from annual_report_mda import sqlite_db
 
-        db_path = config.project.db_path or "data/annual_reports.duckdb"
-        db_conn = init_db(db_path)
-        logging.info(f"使用 DuckDB 数据源: {db_path}")
+        sqlite_path = "data/metadata.db"
+        db_conn = sqlite_db.get_connection(sqlite_path)
+        logging.info(f"使用 SQLite 数据源: {sqlite_path}")
 
-    for year in crawler_cfg.target_years:
+        # 数据库模式：查询所有有待下载任务的年份，而不是使用配置文件中的年份
+        pending_years = db_conn.execute(
+            "SELECT DISTINCT year FROM reports WHERE download_status = 'pending' ORDER BY year DESC"
+        ).fetchall()
+        years_to_process = [row[0] for row in pending_years]
+
+        if not years_to_process:
+            logging.info("没有待下载的任务")
+            db_conn.close()
+            return
+
+        logging.info(f"发现 {len(years_to_process)} 个年份有待下载任务: {years_to_process}")
+    else:
+        # Excel 模式：使用配置文件中的年份
+        years_to_process = crawler_cfg.target_years
+
+    for year in years_to_process:
         excel_path = downloader_cfg.paths.input_excel_template.replace("{year}", str(year))
         pdf_dir = downloader_cfg.paths.pdf_dir_template.replace("{year}", str(year))
         txt_dir = downloader_cfg.paths.txt_dir_template.replace("{year}", str(year))
