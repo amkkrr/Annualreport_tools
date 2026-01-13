@@ -572,6 +572,9 @@ def _run_with_yaml_config(args: argparse.Namespace) -> int:
 
     if args.dir:
         root = Path(args.dir)
+    elif mda_cfg.behavior.input_dir:
+        root = Path(mda_cfg.behavior.input_dir)
+        _LOG.info("使用配置文件中的默认输入目录: %s", root)
     else:
         _LOG.info("使用配置模式但未指定 --text 或 --dir，请指定输入路径。")
         return 2

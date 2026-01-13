@@ -123,3 +123,5 @@ mda:
     # 增量更新模式
     incremental: true
     workers: 4
+    # TXT 文件输入目录 (--use-config 时的默认扫描目录)
+    input_dir: "outputs/annual_reports"

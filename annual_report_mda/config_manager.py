@@ -209,6 +209,7 @@ class MdaBehaviorConfig(BaseModel):
 
     incremental: bool = True
     workers: int = Field(default=4, ge=1, le=32)
+    input_dir: str = Field(default="outputs/annual_reports", description="TXT 文件输入目录")
 
 
 class MdaConfig(BaseModel):
