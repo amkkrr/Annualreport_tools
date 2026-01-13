@@ -1097,7 +1097,7 @@ def _run_with_yaml_config(args: argparse.Namespace) -> None:
     if use_duckdb:
         from annual_report_mda.db import init_db
 
-        db_path = config.project.db_path or "data/annual_reports.duckdb"
+        db_path = config.database.path or "data/annual_reports.duckdb"
         db_conn = init_db(db_path)
         logging.info(f"使用 DuckDB 数据源: {db_path}")
 
