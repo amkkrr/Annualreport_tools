@@ -174,18 +174,23 @@ class DateRangeGenerator:
     """日期范围生成器。"""
 
     @staticmethod
-    def generate_daily_ranges(year: int) -> list[str]:
+    def generate_daily_ranges(year: int, end_date: datetime | None = None) -> list[str]:
         """生成指定年份每一天的日期范围。
 
         Args:
             year: 年份
+            end_date: 截止日期（可选，默认为该年12月31日）
 
         Returns:
             日期范围列表，格式：["YYYY-MM-DD~YYYY-MM-DD", ...]
         """
         ranges = []
         start_date = datetime(year, 1, 1)
-        end_date = datetime(year, 12, 31)
+        if end_date is None:
+            end_date = datetime(year, 12, 31)
+
+        # 确保 end_date 不会跨年（如果只需要该年的话，但逻辑上由调用者保证更灵活）
+        # 这里我们尊重调用者传入的 end_date，只要它 >= start_date
 
         current_date = start_date
         while current_date <= end_date:
@@ -365,8 +370,27 @@ class AnnualReportCrawler:
         logging.info("=" * 60)
 
         # 生成日期范围（按天）
-        date_ranges = DateRangeGenerator.generate_daily_ranges(self.config.target_year + 1)
-        logging.info(f"将按 {len(date_ranges)} 个日期范围进行爬取")
+        # 业务逻辑：抓取 N 年年报，应在 N+1 年检索
+        # 优化：不爬取未来日期，且默认止于 N+1 年的 5 月 1 日（A股年报披露基本在4月30日结束）
+        search_year = self.config.target_year + 1
+        end_of_search = datetime(search_year, 12, 31)
+
+        # 如果是当前年份或未来年份，截断到今天
+        today = datetime.now()
+        actual_end_date = min(end_of_search, today)
+
+        # 进一步优化：如果是年报，通常 4月30日 就结束了，5月之后大多是冗余请求
+        # 默认限制到 5月31日 以覆盖补报和更正，除非当前日期还没到 5月31日
+        # 设置截止日期为 min(actual_end_date, 5月31日)
+        annual_report_cutoff = datetime(search_year, 5, 31)
+        actual_end_date = min(actual_end_date, annual_report_cutoff)
+
+        date_ranges = DateRangeGenerator.generate_daily_ranges(
+            search_year, end_date=actual_end_date
+        )
+        logging.info(
+            f"将按 {len(date_ranges)} 个日期范围进行爬取 (截止至 {actual_end_date.strftime('%Y-%m-%d')})"
+        )
 
         # 输出文件路径
         output_filename = f"年报链接_{self.config.target_year}{GZH}.xlsx"
