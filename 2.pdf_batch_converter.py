@@ -1113,7 +1113,23 @@ def _run_with_yaml_config(args: argparse.Namespace) -> None:
         db_conn = sqlite_db.get_connection(sqlite_path)
         logging.info(f"使用 SQLite 数据源: {sqlite_path}")
 
-    for year in crawler_cfg.target_years:
+        # 数据库模式：查询所有有待下载任务的年份，而不是使用配置文件中的年份
+        pending_years = db_conn.execute(
+            "SELECT DISTINCT year FROM reports WHERE download_status = 'pending' ORDER BY year DESC"
+        ).fetchall()
+        years_to_process = [row[0] for row in pending_years]
+
+        if not years_to_process:
+            logging.info("没有待下载的任务")
+            db_conn.close()
+            return
+
+        logging.info(f"发现 {len(years_to_process)} 个年份有待下载任务: {years_to_process}")
+    else:
+        # Excel 模式：使用配置文件中的年份
+        years_to_process = crawler_cfg.target_years
+
+    for year in years_to_process:
         excel_path = downloader_cfg.paths.input_excel_template.replace("{year}", str(year))
         pdf_dir = downloader_cfg.paths.pdf_dir_template.replace("{year}", str(year))
         txt_dir = downloader_cfg.paths.txt_dir_template.replace("{year}", str(year))
