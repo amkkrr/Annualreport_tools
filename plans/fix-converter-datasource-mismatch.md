@@ -88,3 +88,23 @@ WebUI 启动 "提取 MDA" 任务时报错:
 1. `MdaBehaviorConfig` 添加 `input_dir` 字段，默认值 `outputs/annual_reports`
 2. `config.yaml.example` 添加 `input_dir` 配置示例
 3. `mda_extractor.py` 优先使用 `--dir` 参数，其次使用配置文件中的 `input_dir`
+
+---
+
+## 追加修复: extractor 提取后 WebUI 待提取数量不更新
+
+### 问题描述
+MDA 提取成功或增量跳过后，WebUI 的"待提取"数量不变。
+
+### 根因
+- WebUI 查询 SQLite 的 `reports.extract_status` 来计算"待提取"数量
+- `mda_extractor.py` 只写入 DuckDB 的 `mda_text` 表
+- 从未更新 SQLite 的 `extract_status` 字段
+
+### 提交 5: eac6c81
+**修复**: 提取完成后同步更新 SQLite 状态
+
+修改内容:
+1. 添加 `_update_sqlite_extract_status()` 辅助函数
+2. 在所有 `upsert_mda_text` 调用后更新 `extract_status` 为 `success`
+3. 在所有 `insert_extraction_error` 调用后更新 `extract_status` 为 `failed`
